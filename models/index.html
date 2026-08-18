@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Taman Kecilku — Village Builder 3D</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Nunito:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --wood-dark:#5C3A21;
+    --wood:#7A5230;
+    --wood-light:#C08A4E;
+    --cream:#FFF6E5;
+    --moss:#4E9A3A;
+    --moss-dark:#3A7A2A;
+    --sun:#F4C95D;
+    --sky-top:#FDE8C8;
+    --sky-bot:#FFB98A;
+    --ink:#3B2A1A;
+    --danger:#C1440E;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;height:100%;overflow:hidden;font-family:'Nunito',sans-serif;background:#000;}
+  #app{position:relative;width:100vw;height:100vh;}
+  canvas{display:block;}
+
+  #topbar{
+    position:absolute;top:0;left:0;right:0;
+    display:flex;align-items:center;justify-content:space-between;
+    padding:14px 20px;
+    background:linear-gradient(180deg,rgba(92,58,33,0.92),rgba(92,58,33,0.0));
+    z-index:10;pointer-events:none;
+  }
+  #topbar *{pointer-events:auto;}
+  #title{
+    font-family:'Fredoka',sans-serif;font-weight:700;color:var(--cream);
+    font-size:22px;letter-spacing:0.5px;text-shadow:0 2px 0 rgba(0,0,0,0.25);
+    display:flex;align-items:center;gap:8px;
+  }
+  #title .leaf{color:var(--moss);font-size:20px;}
+  #coins{
+    background:var(--wood-dark);border:2px solid var(--wood-light);
+    color:var(--sun);font-family:'Fredoka',sans-serif;font-weight:600;font-size:17px;
+    padding:8px 16px;border-radius:999px;display:flex;align-items:center;gap:8px;
+    box-shadow:0 3px 0 rgba(0,0,0,0.25);
+  }
+  #coins .coin{
+    width:18px;height:18px;border-radius:50%;background:var(--sun);
+    border:2px solid #B8892A;display:inline-block;
+  }
+
+  #hint{
+    position:absolute;top:64px;left:50%;transform:translateX(-50%);
+    background:rgba(59,42,26,0.85);color:var(--cream);
+    font-size:13px;padding:6px 14px;border-radius:8px;
+    z-index:10;pointer-events:none;transition:opacity .3s;
+    font-family:'Nunito',sans-serif;
+  }
+
+  #shop{
+    position:absolute;right:0;top:0;bottom:0;width:250px;
+    background:linear-gradient(180deg,var(--wood-dark),var(--wood));
+    border-left:4px solid var(--wood-light);
+    z-index:10;display:flex;flex-direction:column;
+    box-shadow:-6px 0 18px rgba(0,0,0,0.25);
+  }
+  #shop-header{
+    padding:16px 16px 10px;
+    font-family:'Fredoka',sans-serif;color:var(--cream);font-weight:600;font-size:16px;
+    border-bottom:2px dashed rgba(255,246,229,0.25);
+  }
+  #shop-list{
+    flex:1;overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:8px;
+  }
+  #shop-list::-webkit-scrollbar{width:6px;}
+  #shop-list::-webkit-scrollbar-thumb{background:var(--wood-light);border-radius:4px;}
+
+  .item{
+    display:flex;align-items:center;gap:10px;
+    background:rgba(255,246,229,0.08);
+    border:2px solid transparent;
+    border-radius:12px;padding:8px 10px;cursor:pointer;
+    transition:background .15s, border-color .15s, transform .1s;
+  }
+  .item:hover{background:rgba(255,246,229,0.16);transform:translateX(-2px);}
+  .item.selected{border-color:var(--sun);background:rgba(244,201,93,0.18);}
+  .swatch{
+    width:34px;height:34px;border-radius:9px;flex-shrink:0;
+    box-shadow:inset 0 0 0 2px rgba(0,0,0,0.15), 0 2px 3px rgba(0,0,0,0.3);
+  }
+  .item-info{flex:1;min-width:0;}
+  .item-name{
+    color:var(--cream);font-size:13.5px;font-weight:700;font-family:'Nunito',sans-serif;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  .item-price{color:var(--sun);font-size:12px;font-weight:700;display:flex;align-items:center;gap:4px;}
+  .item-price .coin{width:10px;height:10px;border-radius:50%;background:var(--sun);border:1.5px solid #B8892A;display:inline-block;}
+
+  #bottombar{
+    position:absolute;bottom:16px;left:16px;
+    display:flex;gap:10px;z-index:10;
+  }
+  .btn{
+    font-family:'Fredoka',sans-serif;font-weight:600;font-size:13px;
+    background:var(--moss);color:var(--cream);border:none;
+    padding:10px 16px;border-radius:10px;cursor:pointer;
+    box-shadow:0 3px 0 var(--moss-dark);
+    transition:transform .08s;
+  }
+  .btn:active{transform:translateY(2px);box-shadow:0 1px 0 var(--moss-dark);}
+  .btn.cancel{background:var(--danger);box-shadow:0 3px 0 #8a3009;}
+  .btn.reset{background:var(--wood);box-shadow:0 3px 0 var(--wood-dark);}
+
+  #loading{
+    position:absolute;inset:0;z-index:50;background:linear-gradient(180deg,var(--sky-top),var(--sky-bot));
+    display:flex;align-items:center;justify-content:center;flex-direction:column;gap:14px;
+  }
+  #loading .spinner{
+    width:44px;height:44px;border-radius:50%;
+    border:5px solid rgba(122,82,48,0.25);border-top-color:var(--wood);
+    animation:spin 0.9s linear infinite;
+  }
+  #loading .ltext{font-family:'Fredoka',sans-serif;color:var(--wood-dark);font-weight:600;font-size:15px;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+
+  @media (max-width:640px){
+    #shop{width:190px;}
+    .item-name{font-size:12px;}
+    #title{font-size:17px;}
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="loading">
+    <div class="spinner"></div>
+    <div class="ltext">Menyiapkan taman…</div>
+  </div>
+
+  <div id="topbar">
+    <div id="title"><span class="leaf">🌿</span>Taman Kecilku</div>
+    <div id="coins"><span class="coin"></span><span id="coin-count">500</span></div>
+  </div>
+
+  <div id="hint">Pilih benda di toko, lalu klik tanah untuk menaruhnya. Klik-kanan benda untuk membongkarnya.</div>
+
+  <div id="shop">
+    <div id="shop-header">🛒 Toko Bangunan</div>
+    <div id="shop-list"></div>
+  </div>
+
+  <div id="bottombar">
+    <button class="btn cancel" id="btn-cancel">Batal Pilih</button>
+    <button class="btn" id="btn-rotate">↻ Putar (R)</button>
+    <button class="btn reset" id="btn-reset">Reset Taman</button>
+  </div>
+</div>
+
+<script src="models_data.js"></script>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from "three";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
+// ---------- Data toko ----------
+const SHOP_ITEMS = [
+  { key:'rumah_mungil',  name:'Rumah Mungil',   price:120, color:'#E8C9A0' },
+  { key:'cerobong_asap', name:'Cerobong Asap',  price:35,  color:'#B5651D' },
+  { key:'gazebo',        name:'Gazebo',         price:150, color:'#F2F2F2' },
+  { key:'pohon_palem',   name:'Pohon Palem',    price:45,  color:'#3FA34D' },
+  { key:'pohon_pinus',   name:'Pohon Pinus',    price:40,  color:'#2E6B2E' },
+  { key:'taman_bunga',   name:'Taman Bunga',    price:60,  color:'#E63946' },
+  { key:'bangku_taman',  name:'Bangku Taman',   price:30,  color:'#8B5A2B' },
+  { key:'lampu_jalan',   name:'Lampu Jalan',    price:25,  color:'#F4D35E' },
+  { key:'pagar_kayu',    name:'Pagar Kayu',     price:20,  color:'#C08A4E' },
+  { key:'air_mancur',    name:'Air Mancur',     price:180, color:'#3E8EDE' },
+  { key:'kolam_ikan',    name:'Kolam Ikan',     price:100, color:'#3E8EDE' },
+  { key:'kincir_angin',  name:'Kincir Angin',   price:140, color:'#C1440E' },
+  { key:'menara_jam',    name:'Menara Jam',     price:220, color:'#9A9A9A' },
+  { key:'jalan_setapak', name:'Jalan Setapak',  price:10,  color:'#9A9A9A' },
+];
+
+let coins = 500;
+const coinEl = document.getElementById('coin-count');
+function setCoins(v){ coins = v; coinEl.textContent = coins; }
+
+// ---------- Scene setup ----------
+const app = document.getElementById('app');
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#FDE8C8');
+scene.fog = new THREE.Fog('#FFD9A6', 30, 70);
+
+const camera = new THREE.PerspectiveCamera(50, window.innerWidth/window.innerHeight, 0.1, 200);
+camera.position.set(14, 12, 14);
+
+const renderer = new THREE.WebGLRenderer({ antialias:true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+app.prepend(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0, 0);
+controls.maxPolarAngle = Math.PI * 0.47;
+controls.minDistance = 5;
+controls.maxDistance = 40;
+controls.enableDamping = true;
+
+// lighting — warm afternoon
+const hemi = new THREE.HemisphereLight('#FFE8C2', '#6B8E4E', 0.9);
+scene.add(hemi);
+const sun = new THREE.DirectionalLight('#FFDCA8', 1.4);
+sun.position.set(15, 22, 8);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.left = -25; sun.shadow.camera.right = 25;
+sun.shadow.camera.top = 25; sun.shadow.camera.bottom = -25;
+scene.add(sun);
+
+// ground
+const GRID_SIZE = 22;
+const groundGeo = new THREE.PlaneGeometry(GRID_SIZE, GRID_SIZE, 1, 1);
+const groundMat = new THREE.MeshStandardMaterial({ color:'#8FBF63', roughness:0.95 });
+const ground = new THREE.Mesh(groundGeo, groundMat);
+ground.rotation.x = -Math.PI/2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+const grid = new THREE.GridHelper(GRID_SIZE, GRID_SIZE, '#5C8A3A', '#6E9E4A');
+grid.position.y = 0.01;
+grid.material.opacity = 0.35;
+grid.material.transparent = true;
+scene.add(grid);
+
+// ---------- Load models from embedded base64 ----------
+const loader = new GLTFLoader();
+const loadedModels = {}; // key -> THREE.Object3D (template)
+
+function base64ToArrayBuffer(b64){
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i=0;i<binary.length;i++) bytes[i] = binary.charCodeAt(i);
+  return bytes.buffer;
+}
+
+function loadAllModels(){
+  const keys = Object.keys(window.MODEL_DATA_B64);
+  let done = 0;
+  return new Promise((resolve) => {
+    keys.forEach((key) => {
+      const buf = base64ToArrayBuffer(window.MODEL_DATA_B64[key]);
+      loader.parse(buf, '', (gltf) => {
+        const obj = gltf.scene;
+        obj.traverse(n => { if (n.isMesh){ n.castShadow = true; n.receiveShadow = true; } });
+        loadedModels[key] = obj;
+        done++;
+        if (done === keys.length) resolve();
+      }, (err) => {
+        console.error('Gagal load', key, err);
+        done++;
+        if (done === keys.length) resolve();
+      });
+    });
+  });
+}
+
+function instantiate(key){
+  const template = loadedModels[key];
+  const clone = template.clone(true);
+  clone.traverse(n => {
+    if (n.isMesh){
+      n.material = n.material.clone();
+      n.castShadow = true;
+      n.receiveShadow = true;
+    }
+  });
+  return clone;
+}
+
+// ---------- Placement state ----------
+let selectedKey = null;
+let ghost = null;
+let ghostRotation = 0;
+const placed = []; // { obj, key, price }
+
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+const groundPlane = new THREE.Plane(new THREE.Vector3(0,1,0), 0);
+
+function screenToGround(clientX, clientY){
+  const rect = renderer.domElement.getBoundingClientRect();
+  mouse.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+  mouse.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera(mouse, camera);
+  const pt = new THREE.Vector3();
+  raycaster.ray.intersectPlane(groundPlane, pt);
+  return pt;
+}
+
+function snap(v){
+  const half = GRID_SIZE/2 - 1;
+  return Math.max(-half, Math.min(half, Math.round(v)));
+}
+
+function clearGhost(){
+  if (ghost){ scene.remove(ghost); ghost = null; }
+}
+
+function selectItem(key){
+  selectedKey = key;
+  ghostRotation = 0;
+  clearGhost();
+  ghost = instantiate(key);
+  ghost.traverse(n => { if (n.isMesh){ n.material.transparent = true; n.material.opacity = 0.55; } });
+  scene.add(ghost);
+  document.querySelectorAll('.item').forEach(el => {
+    el.classList.toggle('selected', el.dataset.key === key);
+  });
+  showHint('Klik tanah untuk menaruh · R untuk memutar · Esc untuk batal');
+}
+
+function deselect(){
+  selectedKey = null;
+  clearGhost();
+  document.querySelectorAll('.item').forEach(el => el.classList.remove('selected'));
+  showHint('Pilih benda di toko, lalu klik tanah untuk menaruhnya. Klik-kanan benda untuk membongkarnya.');
+}
+
+let hintTimeout;
+function showHint(text){
+  const el = document.getElementById('hint');
+  el.textContent = text;
+  el.style.opacity = '1';
+  clearTimeout(hintTimeout);
+}
+
+function placeAt(x, z){
+  const item = SHOP_ITEMS.find(i => i.key === selectedKey);
+  if (!item) return;
+  if (coins < item.price){
+    showHint('Koin tidak cukup untuk ' + item.name + '!');
+    return;
+  }
+  const obj = instantiate(selectedKey);
+  obj.position.set(x, 0, z);
+  obj.rotation.y = ghostRotation;
+  obj.userData.price = item.price;
+  obj.userData.key = selectedKey;
+  scene.add(obj);
+  placed.push(obj);
+  setCoins(coins - item.price);
+}
+
+renderer.domElement.addEventListener('pointermove', (e) => {
+  if (!selectedKey || !ghost) return;
+  const pt = screenToGround(e.clientX, e.clientY);
+  if (!pt) return;
+  ghost.position.set(snap(pt.x), 0, snap(pt.z));
+});
+
+renderer.domElement.addEventListener('click', (e) => {
+  if (!selectedKey || !ghost) return;
+  placeAt(ghost.position.x, ghost.position.z);
+});
+
+renderer.domElement.addEventListener('contextmenu', (e) => {
+  e.preventDefault();
+  const rect = renderer.domElement.getBoundingClientRect();
+  mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+  mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera(mouse, camera);
+  const hits = raycaster.intersectObjects(placed, true);
+  if (hits.length){
+    let root = hits[0].object;
+    while (root.parent && !placed.includes(root)) root = root.parent;
+    if (placed.includes(root)){
+      scene.remove(root);
+      const idx = placed.indexOf(root);
+      placed.splice(idx, 1);
+      setCoins(coins + Math.floor((root.userData.price || 0) * 0.5));
+      showHint('Bangunan dibongkar, koin dikembalikan sebagian.');
+    }
+  }
+});
+
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'r' || e.key === 'R'){
+    if (ghost){ ghostRotation += Math.PI/4; ghost.rotation.y = ghostRotation; }
+  }
+  if (e.key === 'Escape') deselect();
+});
+
+document.getElementById('btn-rotate').addEventListener('click', () => {
+  if (ghost){ ghostRotation += Math.PI/4; ghost.rotation.y = ghostRotation; }
+});
+document.getElementById('btn-cancel').addEventListener('click', deselect);
+document.getElementById('btn-reset').addEventListener('click', () => {
+  placed.forEach(o => scene.remove(o));
+  placed.length = 0;
+  setCoins(500);
+  showHint('Taman direset.');
+});
+
+// ---------- Build shop UI ----------
+const shopList = document.getElementById('shop-list');
+SHOP_ITEMS.forEach(item => {
+  const el = document.createElement('div');
+  el.className = 'item';
+  el.dataset.key = item.key;
+  el.innerHTML = `
+    <div class="swatch" style="background:${item.color}"></div>
+    <div class="item-info">
+      <div class="item-name">${item.name}</div>
+      <div class="item-price"><span class="coin"></span>${item.price}</div>
+    </div>
+  `;
+  el.addEventListener('click', () => selectItem(item.key));
+  shopList.appendChild(el);
+});
+
+// ---------- Resize ----------
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ---------- Animate ----------
+function animate(){
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+// ---------- Boot ----------
+loadAllModels().then(() => {
+  document.getElementById('loading').style.display = 'none';
+  animate();
+});
+</script>
+</body>
+</html>
