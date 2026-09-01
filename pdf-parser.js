@@ -1,63 +1,89 @@
 /* =========================================================
-   pdf-parser.js
-   Ekstraksi & Parsing Soal Serbaguna dari Berbagai Format:
-   - Excel (.xlsx, .xls) via SheetJS
-   - CSV (.csv) via SheetJS / Text parsing
-   - JSON (.json)
-   - PDF (.pdf) via PDF.js (layout Y-position preserved)
-   - TXT (.txt)
+   pdf-parser.js  — PDF Quiz Parser Sistem Lengkap
+   Versi: 3.11.174 (PDF.js)
+   ---------------------------------------------------------
+   Fitur:
+   v Pembaca PDF baris-per-baris via PDF.js 3.11.174
+   v Regex ekstraksi soal, pilihan A/B/C/D & kunci jawaban
+   v Dukungan format: PDF, TXT, JSON, Excel/CSV (.xlsx/.xls)
+   v Hapus quiz_data lama dari localStorage sebelum simpan baru
+   v Simpan ke localStorage('quiz_data') + window.activeQuestions
+   v Reset questionIndex ke 0 & trigger live-reload panel kuis
    ========================================================= */
 
 (function () {
   "use strict";
 
+  /* == PDF.js v3.11.174 Worker Source == */
   if (window.pdfjsLib) {
     window.pdfjsLib.GlobalWorkerOptions.workerSrc =
-      "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js";
+      "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
   }
 
   /**
-   * Mengekstrak seluruh teks dari file PDF (File object) dengan mempertahankan urutan baris (Y-pos).
+   * PEMBACA PDF — Baris per Baris (PDF.js v3.11.174)
+   * Mengekstrak teks dari file PDF dengan mempertahankan urutan baris
+   * berdasarkan posisi Y (atas ke bawah) dan X (kiri ke kanan).
    * @param {File} file
    * @returns {Promise<string>}
    */
   async function extractTextFromPDF(file) {
+    if (!window.pdfjsLib) {
+      throw new Error("PDF.js belum dimuat. Pastikan CDN pdf.js v3.11.174 tersedia.");
+    }
+
     const arrayBuffer = await file.arrayBuffer();
     const loadingTask = window.pdfjsLib.getDocument({ data: arrayBuffer });
     const pdf = await loadingTask.promise;
 
+    console.log("[PDFParser] Membaca PDF:", file.name, "— Halaman:", pdf.numPages);
+
     let fullText = "";
+
     for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
       const page = await pdf.getPage(pageNum);
       const textContent = await page.getTextContent();
-      
+
+      /* Urutkan item teks: Y besar = atas halaman (koordinat PDF terbalik),
+         lalu X kecil ke besar (kiri ke kanan) dalam satu baris */
       const items = textContent.items.slice();
       items.sort((a, b) => {
         const yA = a.transform ? a.transform[5] : 0;
         const yB = b.transform ? b.transform[5] : 0;
-        if (Math.abs(yA - yB) > 4) {
-          return yB - yA;
-        }
+        if (Math.abs(yA - yB) > 4) return yB - yA; // baris berbeda
         const xA = a.transform ? a.transform[4] : 0;
         const xB = b.transform ? b.transform[4] : 0;
-        return xA - xB;
+        return xA - xB; // dalam baris sama
       });
 
-      let pageText = "";
+      /* Rekonstruksi baris per baris secara eksplisit */
+      const pageLines = [];
+      let currentLine = "";
       let lastY = null;
+
       for (const item of items) {
         if (!item.str) continue;
         const currentY = item.transform ? item.transform[5] : null;
+
         if (lastY !== null && currentY !== null && Math.abs(currentY - lastY) > 4) {
-          pageText += "\n";
-        } else if (pageText.length > 0 && !pageText.endsWith("\n") && !pageText.endsWith(" ")) {
-          pageText += " ";
+          // Pergantian baris: simpan baris lama, mulai baris baru
+          if (currentLine.trim()) pageLines.push(currentLine.trim());
+          currentLine = item.str;
+        } else {
+          // Lanjut dalam baris yang sama
+          if (currentLine.length > 0 && !currentLine.endsWith(" ") && !item.str.startsWith(" ")) {
+            currentLine += " ";
+          }
+          currentLine += item.str;
         }
-        pageText += item.str;
         if (currentY !== null) lastY = currentY;
       }
-      fullText += pageText + "\n\n";
+      if (currentLine.trim()) pageLines.push(currentLine.trim());
+
+      console.log("[PDFParser] Halaman", pageNum, ":", pageLines.length, "baris");
+      fullText += pageLines.join("\n") + "\n\n";
     }
+
     return fullText;
   }
 
@@ -197,118 +223,247 @@
   }
 
   /**
-   * Parsing teks mentah dari PDF atau TXT menjadi array soal.
+   * REGEX EKSTRAKSI SOAL & KUNCI JAWABAN dari Teks (PDF / TXT)
+   * Format yang dikenali:
+   *   Soal   : "1. Pertanyaan..." / "1) ..." / "Soal 1. ..."
+   *   Pilihan : "A. Jawaban" / "A) Jawaban" / "a. Jawaban"
+   *   Kunci  : "Kunci: A" / "Jawaban: B" / "Ans: C" / "Key: D"
    */
   function parseQuestionsFromText(text) {
     if (!text || typeof text !== "string") return [];
 
-    // 1. Coba parsing JSON lebih dahulu
+    // Coba JSON terlebih dahulu
     const jsonParsed = parseJSONQuestions(text);
     if (jsonParsed.length > 0) return jsonParsed;
 
-    const cleaned = text.replace(/\r/g, "\n");
-    const lines = cleaned.split("\n").map(l => l.trim()).filter(l => l.length > 0);
+    // Normalisasi baris
+    const lines = text
+      .replace(/\r\n/g, "\n")
+      .replace(/\r/g, "\n")
+      .split("\n")
+      .map(l => l.trim())
+      .filter(l => l.length > 0);
     const fullContent = lines.join("\n");
 
-    // 2. Deteksi blok soal berdasar penomoran: 1., 1), Soal 1, 1:, Q1.
-    const blockRegex = /(?:^|\n)\s*(?:Soal\s*)?(\d{1,3})\s*[.:\)]\s*/gi;
-    const matches = [];
-    let match;
-    while ((match = blockRegex.exec(fullContent)) !== null) {
-      matches.push({
-        index: match.index,
-        number: match[1]
-      });
+    // Temukan posisi awal setiap soal berdasarkan pola nomor
+    const SOAL_REGEX = /(?:^|\n)\s*(?:Soal\s+)?(\d{1,3})\s*[.):]\s+/gi;
+    const soalPositions = [];
+    let m;
+    while ((m = SOAL_REGEX.exec(fullContent)) !== null) {
+      soalPositions.push({ index: m.index, number: parseInt(m[1], 10) });
     }
 
-    const blocks = [];
-    for (let i = 0; i < matches.length; i++) {
-      const start = matches[i].index;
-      const end = (i < matches.length - 1) ? matches[i + 1].index : fullContent.length;
-      const blockText = fullContent.substring(start, end).trim();
-      if (blockText.length > 5) {
-        blocks.push(blockText);
-      }
-    }
-
-    if (blocks.length === 0) {
-      const altBlocks = fullContent.split(/\n\s*\n/).map(b => b.trim()).filter(b => b.length > 10);
-      blocks.push(...altBlocks);
+    if (soalPositions.length === 0) {
+      // Fallback: pisah berdasarkan paragraf
+      return parseByParagraph(fullContent);
     }
 
     const questions = [];
 
-    for (const block of blocks) {
-      const optionLabelRegex = /(?:^|\s|\n)(?:\(?([a-dA-D])[\.\)]|\b([a-dA-D])[\.\)])\s*/g;
+    for (let si = 0; si < soalPositions.length; si++) {
+      const blockStart = soalPositions[si].index;
+      const blockEnd = si < soalPositions.length - 1
+        ? soalPositions[si + 1].index
+        : fullContent.length;
+
+      const block = fullContent.substring(blockStart, blockEnd).trim();
+      if (block.length < 5) continue;
+
+      // Temukan semua pilihan A/B/C/D di dalam blok ini
       const optMatches = [];
-      let optMatch;
-      while ((optMatch = optionLabelRegex.exec(block)) !== null) {
-        const letter = (optMatch[1] || optMatch[2]).toUpperCase();
+      let optM;
+      const optRx = /(?:^|\n)\s*\(?([A-Da-d])\s*[.)]\s+/g;
+      while ((optM = optRx.exec(block)) !== null) {
         optMatches.push({
-          index: optMatch.index,
-          matchLength: optMatch[0].length,
-          letter: letter
+          index: optM.index,
+          matchLen: optM[0].length,
+          letter: optM[1].toUpperCase()
         });
       }
 
       if (optMatches.length < 2) continue;
 
-      const answerMatch = block.match(/(?:Jawaban|Kunci|Ans|Answer|Key)\s*[:=.]?\s*\(?\s*([a-dA-D1-4])\s*\)?/i);
-      let correctIndex = 0;
+      // Ekstrak teks soal (sebelum pilihan pertama)
+      let questionText = block.substring(0, optMatches[0].index).trim();
+      questionText = questionText
+        .replace(/^(?:Soal\s+)?\d{1,3}\s*[.):] */i, "")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (!questionText || questionText.length < 3) continue;
 
-      const firstOptIndex = optMatches[0].index;
-      let questionText = block.substring(0, firstOptIndex).trim();
-      questionText = questionText.replace(/^(?:Soal\s*)?\d{1,3}\s*[.:\)]\s*/i, "").trim();
-      questionText = questionText.replace(/\s+/g, " ");
-
-      if (!questionText || questionText.length < 2) continue;
-
+      // Ekstrak teks setiap pilihan
       const options = [];
-      const optionLetters = [];
+      const optLetters = [];
 
-      for (let i = 0; i < optMatches.length; i++) {
-        const currentOpt = optMatches[i];
-        const textEnd = (i < optMatches.length - 1) ? optMatches[i + 1].index : block.length;
-        const rawOptText = block.substring(currentOpt.index + currentOpt.matchLength, textEnd);
-        const optTextClean = rawOptText.split(/(?:Jawaban|Kunci|Ans|Answer)/i)[0].trim().replace(/\s+/g, " ");
+      for (let oi = 0; oi < optMatches.length; oi++) {
+        const cur = optMatches[oi];
+        const nextStart = oi < optMatches.length - 1
+          ? optMatches[oi + 1].index
+          : block.length;
 
-        if (optTextClean.length > 0 && !optionLetters.includes(currentOpt.letter)) {
-          options.push(optTextClean);
-          optionLetters.push(currentOpt.letter);
+        const rawOpt = block.substring(cur.index + cur.matchLen, nextStart);
+        // Potong jika ada baris kunci jawaban di akhir opsi terakhir
+        const optText = rawOpt
+          .split(/(?:Kunci|Jawaban|Ans(?:wer)?|Key)\s*[:=.]/i)[0]
+          .trim()
+          .replace(/\s+/g, " ");
+
+        if (optText.length > 0 && !optLetters.includes(cur.letter)) {
+          options.push(optText);
+          optLetters.push(cur.letter);
         }
       }
 
       if (options.length < 2) continue;
-      while (options.length > 4) {
-        options.pop();
-        optionLetters.pop();
-      }
+      while (options.length > 4) { options.pop(); optLetters.pop(); }
 
-      if (answerMatch) {
-        const val = answerMatch[1].toUpperCase();
-        if (val >= "A" && val <= "D") {
-          const foundIdx = optionLetters.indexOf(val);
-          if (foundIdx !== -1) correctIndex = foundIdx;
-          else correctIndex = val.charCodeAt(0) - 65;
-        } else if (val >= "1" && val <= "4") {
-          correctIndex = parseInt(val, 10) - 1;
+      // Ekstrak kunci jawaban dengan pembersihan dan konversi yang akurat
+      let correctIndex = 0;
+      // Cari baris/fragmen kunci jawaban
+      const kunciLineMatch = block.match(/(?:Kunci(?:\s*Jawaban)?|Jawaban|Ans(?:wer)?|Key)\s*[:=.]?\s*([^\n]+)/i);
+
+      if (kunciLineMatch) {
+        // Pembersihan Ekstraksi Kunci: Hapus kata 'Kunci:', 'Jawaban:', titik, spasi
+        let rawKunci = kunciLineMatch[1]
+          .replace(/^(?:Kunci(?:\s*Jawaban)?|Jawaban|Ans(?:wer)?|Key)\s*[:=.]?\s*/i, "")
+          .replace(/^[.:=\s]+|[.:=\s]+$/g, "")
+          .trim()
+          .toUpperCase();
+
+        // Ambil huruf/karakter kunci pertama jika berupa huruf (misal "C." -> "C")
+        const charMatch = rawKunci.match(/^([A-D1-4])/);
+        if (charMatch) {
+          const val = charMatch[1];
+          if (val >= "A" && val <= "D") {
+            // Konversi Huruf Kunci (A, B, C, D) ke indeks pilihan (0, 1, 2, 3)
+            const foundIdx = optLetters.indexOf(val);
+            correctIndex = foundIdx !== -1 ? foundIdx : val.charCodeAt(0) - 65;
+          } else if (val >= "1" && val <= "4") {
+            correctIndex = parseInt(val, 10) - 1;
+          }
+        } else {
+          // Jika kunci berupa teks isi jawaban, cocokkan dengan pilihan
+          const matchIdx = options.findIndex(opt => opt.trim().toUpperCase() === rawKunci);
+          if (matchIdx !== -1) correctIndex = matchIdx;
         }
       }
 
-      if (correctIndex < 0 || correctIndex >= options.length) correctIndex = 0;
-
-      questions.push({
-        question: questionText,
-        options: options,
-        correctIndex: correctIndex
-      });
+      correctIndex = Math.max(0, Math.min(options.length - 1, correctIndex));
+      questions.push({ question: questionText, options, correctIndex });
     }
 
     return questions;
   }
 
+  /* Fallback: Parsing berdasarkan paragraf (bila tidak ada nomor soal) */
+  function parseByParagraph(text) {
+    const paragraphs = text.split(/\n\s*\n/).map(p => p.trim()).filter(p => p.length > 10);
+    const questions = [];
+
+    for (const para of paragraphs) {
+      const optMatches = [];
+      let optM;
+      const optRx = /(?:^|\n)\s*\(?([A-Da-d])\s*[.)]\s+/g;
+      while ((optM = optRx.exec(para)) !== null) {
+        optMatches.push({ index: optM.index, matchLen: optM[0].length, letter: optM[1].toUpperCase() });
+      }
+      if (optMatches.length < 2) continue;
+
+      let qText = para.substring(0, optMatches[0].index)
+        .replace(/^(?:Soal\s+)?\d{1,3}\s*[.):] */i, "")
+        .replace(/\s+/g, " ").trim();
+      if (!qText || qText.length < 3) continue;
+
+      const options = [], optLetters = [];
+      for (let oi = 0; oi < optMatches.length; oi++) {
+        const cur = optMatches[oi];
+        const nextStart = oi < optMatches.length - 1 ? optMatches[oi + 1].index : para.length;
+        const rawOpt = para.substring(cur.index + cur.matchLen, nextStart)
+          .split(/(?:Kunci|Jawaban|Ans(?:wer)?|Key)\s*[:=.]/i)[0]
+          .trim().replace(/\s+/g, " ");
+        if (rawOpt.length > 0 && !optLetters.includes(cur.letter)) {
+          options.push(rawOpt); optLetters.push(cur.letter);
+        }
+      }
+      if (options.length < 2) continue;
+
+      let correctIndex = 0;
+      const km = para.match(/(?:Kunci(?:\s*Jawaban)?|Jawaban|Ans(?:wer)?|Key)\s*[:=.]?\s*([^\n]+)/i);
+      if (km) {
+        let rawKunci = km[1]
+          .replace(/^(?:Kunci(?:\s*Jawaban)?|Jawaban|Ans(?:wer)?|Key)\s*[:=.]?\s*/i, "")
+          .replace(/^[.:=\s]+|[.:=\s]+$/g, "")
+          .trim()
+          .toUpperCase();
+        const charMatch = rawKunci.match(/^([A-D1-4])/);
+        if (charMatch) {
+          const v = charMatch[1];
+          if (v >= "A" && v <= "D") {
+            const fi = optLetters.indexOf(v);
+            correctIndex = fi !== -1 ? fi : v.charCodeAt(0) - 65;
+          } else if (v >= "1" && v <= "4") {
+            correctIndex = parseInt(v, 10) - 1;
+          }
+        } else {
+          const matchIdx = options.findIndex(opt => opt.trim().toUpperCase() === rawKunci);
+          if (matchIdx !== -1) correctIndex = matchIdx;
+        }
+      }
+
+      questions.push({ question: qText, options, correctIndex: Math.max(0, Math.min(options.length - 1, correctIndex)) });
+    }
+    return questions;
+  }
+
+  /* ================================================================
+     HAPUS DATA LAMA & TERAPKAN SOAL BARU
+     1. localStorage.removeItem('quiz_data') — hapus data lama
+     2. Simpan data baru ke localStorage('quiz_data')
+     3. window.activeQuestions = parsedData (timpa langsung)
+     4. Reset questionIndex & dispatch event pdfQuizLoaded
+  ================================================================ */
+  function applyParsedQuestions(parsedData, fileName) {
+    if (!Array.isArray(parsedData) || parsedData.length === 0) return false;
+
+    // Langkah 1: Hapus data kuis lama dari localStorage
+    localStorage.removeItem("quiz_data");
+    ["islamgame_questions_v1", "dreamtown_questions"].forEach(k => localStorage.removeItem(k));
+    console.log("[PDFParser] Data kuis lama (quiz_data) dihapus dari localStorage.");
+
+    // Langkah 2: Simpan data baru ke localStorage
+    try {
+      localStorage.setItem("quiz_data", JSON.stringify(parsedData));
+      console.log("[PDFParser] " + parsedData.length + " soal dari '" + fileName + "' disimpan ke localStorage('quiz_data').");
+    } catch (e) {
+      console.warn("[PDFParser] Gagal menyimpan ke localStorage:", e);
+    }
+
+    // Langkah 3: Perbarui QuestionsModule (sumber data utama game)
+    if (window.QuestionsModule && typeof window.QuestionsModule.setQuestionsFromPDF === "function") {
+      window.QuestionsModule.setQuestionsFromPDF(parsedData);
+    }
+
+    // Langkah 4: Timpa window.activeQuestions secara langsung
+    window.activeQuestions = parsedData.slice();
+    console.log("[PDFParser] window.activeQuestions diperbarui:", parsedData.length, "soal.");
+
+    // Langkah 5: Reset questionIndex ke 0 & trigger live-reload panel kuis
+    if (window.QuizController && typeof window.QuizController.reloadWithNewQuestions === "function") {
+      window.QuizController.reloadWithNewQuestions(parsedData);
+    } else {
+      // Dispatch custom event agar game.js bisa menangkap & reload kuis
+      const event = new CustomEvent("pdfQuizLoaded", {
+        detail: { questions: parsedData, count: parsedData.length, source: fileName }
+      });
+      window.dispatchEvent(event);
+      console.log("[PDFParser] Event 'pdfQuizLoaded' dikirim dengan", parsedData.length, "soal.");
+    }
+
+    return true;
+  }
+
   /**
-   * Memproses unggahan file (Excel / CSV / JSON / PDF / TXT).
+   * HANDLER UTAMA: Proses file yang diunggah (PDF / TXT / JSON / Excel / CSV)
    * @param {File} file
    * @returns {Promise<{success:boolean, count:number, message:string}>}
    */
@@ -321,6 +476,8 @@
       const fileName = file.name.toLowerCase();
       let parsed = [];
 
+      console.log("[PDFParser] Memproses file:", file.name, "(" + (file.size / 1024).toFixed(1) + " KB)");
+
       if (fileName.endsWith(".xlsx") || fileName.endsWith(".xls") || fileName.endsWith(".csv")) {
         const buffer = await file.arrayBuffer();
         parsed = parseExcelOrCSVData(buffer);
@@ -331,8 +488,9 @@
         const text = await file.text();
         parsed = parseQuestionsFromText(text);
       } else {
-        // PDF atau file lainnya
+        // PDF — Baca baris per baris via PDF.js 3.11.174
         const text = await extractTextFromPDF(file);
+        console.log("[PDFParser] Teks PDF diekstrak:", text.length, "karakter");
         parsed = parseQuestionsFromText(text);
       }
 
@@ -340,22 +498,26 @@
         return {
           success: false,
           count: 0,
-          message: "Tidak ada soal terdeteksi dalam file. Pastikan format file sesuai (Excel/CSV/JSON/PDF/TXT)."
+          message: "Tidak ada soal terdeteksi dalam '" + file.name + "'. " +
+            "Pastikan PDF mengandung teks (bukan gambar scan), atau gunakan JSON/CSV/Excel."
         };
       }
 
-      window.QuestionsModule.setQuestionsFromPDF(parsed);
+      // Terapkan: hapus lama, simpan baru, update aktif, reload kuis
+      applyParsedQuestions(parsed, file.name);
+
       return {
         success: true,
         count: parsed.length,
-        message: `🎉 Berhasil memuat ${parsed.length} soal dari ${file.name}! Soal disimpan & akan digunakan mulai sekarang.`
+        message: "Berhasil memuat " + parsed.length + " soal dari '" + file.name + "'! " +
+          "Soal baru langsung aktif — kuis dimulai dari soal pertama."
       };
     } catch (err) {
-      console.error("Gagal membaca file:", err);
+      console.error("[PDFParser] Gagal membaca file:", err);
       return {
         success: false,
         count: 0,
-        message: "Gagal membaca file. Silakan coba lagi atau gunakan format lain (JSON/CSV/Excel)."
+        message: "Gagal membaca file: " + (err.message || "Error tidak diketahui") + ". Coba format lain (JSON/CSV/Excel)."
       };
     }
   }
@@ -365,6 +527,10 @@
     parseExcelOrCSVData,
     parseJSONQuestions,
     parseQuestionsFromText,
+    parseByParagraph,
+    applyParsedQuestions,
     handlePDFUpload
   };
+
+  console.log("[PDFParser] pdf-parser.js dimuat OK — PDF.js v3.11.174 siap.");
 })();

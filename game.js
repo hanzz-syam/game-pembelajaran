@@ -249,6 +249,24 @@
     // ────────────────────────────────────────────────────────────────
 
     requestAnimationFrame(gameLoop);
+
+    /* ── Live Reload: Tangkap soal baru dari PDF saat game sedang berjalan ── */
+    window.addEventListener("pdfQuizLoaded", function (e) {
+      const newQuestions = e.detail && e.detail.questions;
+      if (!Array.isArray(newQuestions) || newQuestions.length === 0) return;
+
+      // Perbarui bank soal di state game
+      state.questions = newQuestions;
+      // Reset indeks soal ke awal
+      state.questionIndex = 0;
+      // Reset set pulau yang sudah dijawab agar soal bisa muncul lagi
+      state.answeredIslands = new Set();
+      // Tutup panel kuis jika sedang terbuka
+      state.isQuestionOpen = false;
+      if (dom["question-panel"]) dom["question-panel"].classList.add("hidden");
+
+      console.log("[game.js] pdfQuizLoaded: Bank soal diperbarui " + newQuestions.length + " soal, indeks reset ke 0.");
+    });
   }
 
   // ---------------- HUD events ----------------
@@ -474,29 +492,30 @@
     const allBtns = dom["answer-options"].querySelectorAll(".answer-btn");
     allBtns.forEach((b) => (b.disabled = true));
 
-    // Evaluasi Jawaban (Pencocokan 3 cara sekaligus via QuestionsModule)
+    // Evaluasi Jawaban (Pencocokan & Normalisasi)
     let isCorrect = false;
-    let userChoice = btnEl.textContent;
-    let correctAnswer = question.correctIndex !== undefined ? question.correctIndex
-                      : (question.correctAnswer !== undefined ? question.correctAnswer
-                      : (question.jawaban !== undefined ? question.jawaban
-                      : (question.kunci !== undefined ? question.kunci : 0)));
+    let userChoiceClean = window.QuestionsModule
+      ? window.QuestionsModule.cleanOptionText(btnEl.textContent)
+      : String(btnEl.textContent).replace(/^(?:[A-Da-d0-9][.\)]\s*)+/g, "").trim();
+
+    let targetKeyClean = "";
+    let targetIndex = question.correctIndex !== undefined ? question.correctIndex : 0;
 
     if (window.QuestionsModule && typeof window.QuestionsModule.checkAnswer === "function") {
       const result = window.QuestionsModule.checkAnswer(question, chosenIdx, btnEl.textContent);
       isCorrect = result.isCorrect;
-      userChoice = result.userClean;
-      correctAnswer = result.systemKey;
+      userChoiceClean = result.userChoiceClean;
+      targetKeyClean = result.targetKeyClean;
+      targetIndex = result.targetIndex;
     } else {
       isCorrect = chosenIdx === question.correctIndex;
+      targetKeyClean = (Array.isArray(question.options) && question.options[question.correctIndex])
+        ? String(question.options[question.correctIndex]).replace(/^(?:[A-Da-d0-9][.\)]\s*)+/g, "").trim()
+        : "";
     }
 
-    // ── Debug Console Log (Sesuai Spesifikasi Instruktur) ──
-    const itemSoal = question.soal || question.question || question.pertanyaan;
-    console.log("Soal:", itemSoal);
-    console.log("Jawaban Dipilih User:", userChoice);
-    console.log("Kunci Jawaban di System:", correctAnswer);
-    console.log("Hasil Cocok?:", isCorrect);
+    // ── Tampilkan Debug Log Sesuai Spesifikasi Instruktur ──
+    console.log("User memilih:", userChoiceClean, "| Kunci Sistem:", targetKeyClean);
 
     if (isCorrect) {
       btnEl.classList.add("correct");
@@ -517,10 +536,9 @@
       state.answeredIslands.add(islandIndex);
     } else {
       btnEl.classList.add("wrong");
-      // Highlight tombol kunci jawaban jika angka/indeks
-      const highlightIdx = typeof correctAnswer === "number" ? correctAnswer : question.correctIndex;
-      if (typeof highlightIdx === "number" && allBtns[highlightIdx]) {
-        allBtns[highlightIdx].classList.add("correct");
+      // Highlight tombol kunci jawaban jika salah
+      if (typeof targetIndex === "number" && allBtns[targetIndex]) {
+        allBtns[targetIndex].classList.add("correct");
       }
       state.hp = Math.max(0, state.hp - 20);
       window.AudioModule.playDamageSFX();
@@ -631,4 +649,17 @@
   }
 
   window.addEventListener("DOMContentLoaded", init);
+
+  /* ── QuizController: Digunakan oleh PDFParserModule.applyParsedQuestions() ── */
+  window.QuizController = {
+    reloadWithNewQuestions: function (newQuestions) {
+      if (!Array.isArray(newQuestions) || newQuestions.length === 0) return;
+      state.questions = newQuestions;
+      state.questionIndex = 0;
+      state.answeredIslands = new Set();
+      state.isQuestionOpen = false;
+      if (dom["question-panel"]) dom["question-panel"].classList.add("hidden");
+      console.log("[game.js] QuizController.reloadWithNewQuestions: " + newQuestions.length + " soal, indeks reset ke 0.");
+    }
+  };
 })();

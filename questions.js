@@ -50,8 +50,11 @@
   function cleanOptionText(text) {
     if (text === null || text === undefined) return "";
     let str = String(text).trim();
-    // Hapus imbuhan prefix opsi seperti 'A. ', 'B. ', '1. ', 'A) ', 'a) ', '1) '
+    // Hapus imbuhan prefix opsi seperti 'A. ', 'B. ', '1. ', 'A) ', 'a) ', '1) ', 'Kunci:', 'Jawaban:'
+    str = str.replace(/^(?:Kunci(?:\s*Jawaban)?|Jawaban|Ans(?:wer)?|Key)\s*[:=.]?\s*/i, "");
     str = str.replace(/^(?:[A-Da-d0-9][.\)]\s*)+/g, "").trim();
+    // Hapus sisa karakter pemisah seperti titik atau titik dua di awal/akhir
+    str = str.replace(/^[.:=\s]+|[.:=\s]+$/g, "").trim();
     return str;
   }
 
@@ -103,71 +106,60 @@
     }
   }
 
-  /* ── Logika Pencocokan Serbaguna (3 cara sekaligus) ── */
+  /* ── Logika Pencocokan Serbaguna & Normalisasi Jawaban (Diagnostik Alert) ── */
   function checkAnswer(question, chosenIdx, chosenRawText) {
-    const userClean = cleanOptionText(chosenRawText);
-    const userCleanLower = userClean.toLowerCase();
+    // Clean user choice text (.trim() dan hapus prefix opsi)
+    const userChoiceClean = cleanOptionText(chosenRawText);
+    const userChoiceLower = userChoiceClean.toLowerCase();
 
-    const letters = ["A", "B", "C", "D", "E", "F"];
-    const userLetter = letters[chosenIdx] || "";
-
-    // Ambil kunci jawaban dari berbagai kemungkinan properti
-    const systemKey = question.correctIndex !== undefined ? question.correctIndex
-                    : (question.correctAnswer !== undefined ? question.correctAnswer
-                    : (question.jawaban !== undefined ? question.jawaban
-                    : (question.kunci !== undefined ? question.kunci : 0)));
-
-    let isCorrect = false;
-
-    // 1. Cocokkan jika kunci berupa Indeks / Angka (0/1/2/3 atau 1/2/3/4)
-    if (typeof systemKey === "number" || (!isNaN(parseInt(systemKey, 10)) && String(systemKey).trim().length <= 2)) {
-      const numKey = parseInt(systemKey, 10);
-      // Cek index 0-based
-      if (chosenIdx === numKey) {
-        isCorrect = true;
-      }
-      // Cek index 1-based (1, 2, 3, 4)
-      else if (chosenIdx + 1 === numKey) {
-        isCorrect = true;
-      }
-    }
-
-    // 2. Cocokkan jika kunci berupa Huruf ('A'/'B'/'C'/'D')
-    if (!isCorrect && typeof systemKey === "string") {
-      const keyUpper = systemKey.trim().toUpperCase();
-      if (keyUpper.length === 1 && keyUpper >= "A" && keyUpper <= "Z") {
-        if (userLetter === keyUpper) {
-          isCorrect = true;
-        }
-        const letterIdx = keyUpper.charCodeAt(0) - 65;
-        if (chosenIdx === letterIdx) {
-          isCorrect = true;
+    // Tentukan kunci sistem dalam bentuk indeks & teks target pilihan yang benar
+    let targetIndex = 0;
+    if (question.correctIndex !== undefined) {
+      targetIndex = question.correctIndex;
+    } else {
+      const rawKey = question.correctAnswer || question.jawaban || question.kunci;
+      if (typeof rawKey === "number") {
+        targetIndex = rawKey;
+      } else if (typeof rawKey === "string") {
+        const keyClean = cleanOptionText(rawKey).toUpperCase();
+        if (keyClean.length === 1 && keyClean >= "A" && keyClean <= "D") {
+          targetIndex = keyClean.charCodeAt(0) - 65;
+        } else if (Array.isArray(question.options)) {
+          const found = question.options.findIndex(opt => cleanOptionText(opt).toLowerCase() === keyClean.toLowerCase());
+          if (found !== -1) targetIndex = found;
         }
       }
     }
 
-    // 3. Cocokkan jika kunci berupa Teks Jawaban
-    if (!isCorrect) {
-      const keyClean = cleanOptionText(systemKey);
-      const keyCleanLower = keyClean.toLowerCase();
+    // Ambil opsi target berdasarkan targetIndex
+    const rawTargetOpt = (Array.isArray(question.options) && question.options[targetIndex]) ? question.options[targetIndex] : "";
+    const targetKeyClean = cleanOptionText(rawTargetOpt);
+    const targetKeyLower = targetKeyClean.toLowerCase();
 
-      if (userCleanLower.length > 0 && keyCleanLower.length > 0 && userCleanLower === keyCleanLower) {
+    // Pencocokan: periksa indeks langsung ATAU perbandingan teks ter-normalisasi (lowercase + trim)
+    let isCorrect = (chosenIdx === targetIndex);
+
+    if (!isCorrect && userChoiceLower.length > 0 && targetKeyLower.length > 0) {
+      if (userChoiceLower === targetKeyLower) {
         isCorrect = true;
       }
-
-      // Cocokkan teks pilihan user dengan teks pada array question.options[systemKey] jika systemKey angka
-      if (Array.isArray(question.options) && typeof systemKey === "number" && question.options[systemKey]) {
-        const targetOptClean = cleanOptionText(question.options[systemKey]).toLowerCase();
-        if (userCleanLower === targetOptClean) {
-          isCorrect = true;
-        }
-      }
     }
+
+    // ── Pop-Up Alert Diagnostik di Layar ──
+    const alertMessage = 
+      "🔍 DIAGNOSTIK KUIS 🔍\n" +
+      "-----------------------------------\n" +
+      "User memilih: " + userChoiceClean + "\n" +
+      "Kunci Sistem: " + targetKeyClean + "\n" +
+      "Hasil Cocok?: " + (isCorrect ? "✅ BENAR" : "❌ SALAH");
+
+    alert(alertMessage);
 
     return {
       isCorrect: isCorrect,
-      systemKey: systemKey,
-      userClean: userClean
+      userChoiceClean: userChoiceClean,
+      targetKeyClean: targetKeyClean,
+      targetIndex: targetIndex
     };
   }
 
