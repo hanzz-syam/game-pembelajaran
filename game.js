@@ -39,7 +39,8 @@
     const ids = [
       "loading-screen", "loading-progress", "loading-text",
       "start-screen", "btn-mode-student", "btn-mode-teacher",
-      "pdf-input", "pdf-status", "btn-start-game",
+      "teacher-upload-screen", "teacher-upload-input", "teacher-upload-status",
+      "teacher-upload-summary", "teacher-upload-count", "btn-teacher-start", "btn-teacher-upload-back",
       "teacher-screen", "teacher-pin", "btn-new-pin", "btn-clear-leaderboard", "leaderboard-list", "btn-teacher-back",
       "join-screen", "student-name", "student-pin", "btn-join-class", "btn-join-back",
       "game-container", "game-canvas",
@@ -80,10 +81,10 @@
 
   // ---------------- Screen management ----------------
   function showScreen(id) {
-    ["loading-screen", "start-screen", "teacher-screen", "join-screen", "game-container"].forEach((s) => {
-      dom[s].classList.add("hidden");
+    ["loading-screen", "start-screen", "teacher-upload-screen", "teacher-screen", "join-screen", "game-container"].forEach((s) => {
+      if (dom[s]) dom[s].classList.add("hidden");
     });
-    dom[id].classList.remove("hidden");
+    if (dom[id]) dom[id].classList.remove("hidden");
   }
 
   // ---------------- Init flow ----------------
@@ -95,46 +96,110 @@
     });
 
     bindStartScreenEvents();
+    bindTeacherUploadEvents();
     bindTeacherScreenEvents();
     bindJoinScreenEvents();
   }
 
   function bindStartScreenEvents() {
-    let selectedMode = "student";
-
-    dom["btn-mode-student"].addEventListener("click", () => {
-      selectedMode = "student";
-      dom["btn-mode-student"].style.opacity = "1";
-      dom["btn-mode-teacher"].style.opacity = "0.6";
-      window.AudioModule.playMenuBGM();
-    });
-
+    // Tombol GURU → buka layar Upload Soal
     dom["btn-mode-teacher"].addEventListener("click", () => {
-      selectedMode = "teacher";
-      dom["btn-mode-teacher"].style.opacity = "1";
-      dom["btn-mode-student"].style.opacity = "0.6";
-      window.AudioModule.playMenuBGM();
-    });
-
-    dom["pdf-input"].addEventListener("change", async (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      dom["pdf-status"].textContent = "⏳ Membaca file...";
-      dom["pdf-status"].style.color = "#d4a017";
-      const result = await window.PDFParserModule.handlePDFUpload(file);
-      dom["pdf-status"].textContent = result.message;
-      dom["pdf-status"].style.color = result.success ? "#2ea84e" : "#d42e48";
-      window.AudioModule.playMenuBGM();
-    });
-
-    dom["btn-start-game"].addEventListener("click", () => {
       window.AudioModule.ensureContext();
       window.AudioModule.playMenuBGM();
-      if (selectedMode === "teacher") {
-        openTeacherDashboard();
-      } else {
+      showScreen("teacher-upload-screen");
+    });
+
+    // Tombol MURID → cek apakah soal sudah disiapkan Guru
+    dom["btn-mode-student"].addEventListener("click", () => {
+      window.AudioModule.ensureContext();
+      window.AudioModule.playMenuBGM();
+
+      // Cek apakah ada soal di localStorage
+      const quizData = localStorage.getItem("quiz_data");
+      let hasQuiz = false;
+      try {
+        if (quizData) {
+          const parsed = JSON.parse(quizData);
+          hasQuiz = Array.isArray(parsed) && parsed.length > 0;
+        }
+      } catch (e) { /* ignore */ }
+
+      if (hasQuiz) {
+        // Soal tersedia → lanjut ke layar Join
         showScreen("join-screen");
+      } else {
+        // Soal belum ada → tampilkan peringatan
+        showNoQuizWarning();
       }
+    });
+  }
+
+  // Tampilkan peringatan jika murid masuk tanpa soal tersedia
+  function showNoQuizWarning() {
+    // Hapus peringatan sebelumnya jika ada
+    const existing = document.getElementById("no-quiz-warning");
+    if (existing) existing.remove();
+
+    const overlay = document.createElement("div");
+    overlay.id = "no-quiz-warning";
+    overlay.className = "warning-overlay";
+    overlay.innerHTML = `
+      <div class="glass warning-card">
+        <div class="warning-icon">⚠️</div>
+        <h2>Soal Belum Disiapkan!</h2>
+        <p>Guru belum mengunggah soal kuis. Hubungi gurumu untuk menyiapkan soal terlebih dahulu.</p>
+        <button class="btn-3d btn-blue" id="btn-warning-ok">👌 Kembali ke Menu</button>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    document.getElementById("btn-warning-ok").addEventListener("click", () => {
+      overlay.remove();
+      showScreen("start-screen");
+    });
+  }
+
+  // Handler untuk layar upload soal Guru
+  function bindTeacherUploadEvents() {
+    dom["teacher-upload-input"].addEventListener("change", async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      // Tampilkan status loading
+      dom["teacher-upload-status"].textContent = "⏳ Membaca file...";
+      dom["teacher-upload-status"].style.color = "#d4a017";
+      dom["btn-teacher-start"].disabled = true;
+      dom["teacher-upload-summary"].classList.add("hidden");
+
+      // Proses file via PDFParserModule
+      const result = await window.PDFParserModule.handlePDFUpload(file);
+
+      dom["teacher-upload-status"].textContent = result.message;
+      dom["teacher-upload-status"].style.color = result.success ? "#2ea84e" : "#d42e48";
+
+      if (result.success) {
+        // Tampilkan ringkasan jumlah soal
+        dom["teacher-upload-count"].textContent = "Berhasil memuat " + result.count + " soal";
+        dom["teacher-upload-summary"].classList.remove("hidden");
+        // Aktifkan tombol mulai game
+        dom["btn-teacher-start"].disabled = false;
+      } else {
+        dom["teacher-upload-summary"].classList.add("hidden");
+        dom["btn-teacher-start"].disabled = true;
+      }
+    });
+
+    // Tombol mulai game → buka Teacher Dashboard
+    dom["btn-teacher-start"].addEventListener("click", () => {
+      if (dom["btn-teacher-start"].disabled) return;
+      window.AudioModule.ensureContext();
+      window.AudioModule.playMenuBGM();
+      openTeacherDashboard();
+    });
+
+    // Tombol kembali → ke role menu
+    dom["btn-teacher-upload-back"].addEventListener("click", () => {
+      showScreen("start-screen");
     });
   }
 
@@ -492,30 +557,22 @@
     const allBtns = dom["answer-options"].querySelectorAll(".answer-btn");
     allBtns.forEach((b) => (b.disabled = true));
 
-    // Evaluasi Jawaban (Pencocokan & Normalisasi)
+    // Evaluasi Jawaban Berbasis Urutan Tombol (Anti-Gagal)
     let isCorrect = false;
-    let userChoiceClean = window.QuestionsModule
-      ? window.QuestionsModule.cleanOptionText(btnEl.textContent)
-      : String(btnEl.textContent).replace(/^(?:[A-Da-d0-9][.\)]\s*)+/g, "").trim();
-
-    let targetKeyClean = "";
-    let targetIndex = question.correctIndex !== undefined ? question.correctIndex : 0;
+    let kunciIndex = (question && question.kunciIndex !== undefined)
+      ? Number(question.kunciIndex)
+      : ((question && question.correctIndex !== undefined) ? Number(question.correctIndex) : 0);
 
     if (window.QuestionsModule && typeof window.QuestionsModule.checkAnswer === "function") {
-      const result = window.QuestionsModule.checkAnswer(question, chosenIdx, btnEl.textContent);
+      const result = window.QuestionsModule.checkAnswer(question, chosenIdx);
       isCorrect = result.isCorrect;
-      userChoiceClean = result.userChoiceClean;
-      targetKeyClean = result.targetKeyClean;
-      targetIndex = result.targetIndex;
+      kunciIndex = result.kunciIndex;
     } else {
-      isCorrect = chosenIdx === question.correctIndex;
-      targetKeyClean = (Array.isArray(question.options) && question.options[question.correctIndex])
-        ? String(question.options[question.correctIndex]).replace(/^(?:[A-Da-d0-9][.\)]\s*)+/g, "").trim()
-        : "";
+      isCorrect = (chosenIdx === kunciIndex);
     }
 
-    // ── Tampilkan Debug Log Sesuai Spesifikasi Instruktur ──
-    console.log("User memilih:", userChoiceClean, "| Kunci Sistem:", targetKeyClean);
+    // ── Log Diagnostik Berbasis Indeks Tombol & Kunci Index ──
+    console.log("Index tombol diklik:", chosenIdx, "| Kunci Index Sistem:", kunciIndex, "| Hasil:", isCorrect ? "BENAR" : "SALAH");
 
     if (isCorrect) {
       btnEl.classList.add("correct");
@@ -537,8 +594,8 @@
     } else {
       btnEl.classList.add("wrong");
       // Highlight tombol kunci jawaban jika salah
-      if (typeof targetIndex === "number" && allBtns[targetIndex]) {
-        allBtns[targetIndex].classList.add("correct");
+      if (typeof kunciIndex === "number" && allBtns[kunciIndex]) {
+        allBtns[kunciIndex].classList.add("correct");
       }
       state.hp = Math.max(0, state.hp - 20);
       window.AudioModule.playDamageSFX();

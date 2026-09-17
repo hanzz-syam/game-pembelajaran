@@ -1,12 +1,8 @@
 /* =========================================================
    questions.js
-   Mengelola bank soal game dengan logika pencocokan fleksibel:
-   - Reset Cache Upload: Saat unggah file baru, hapus 'quiz_data'
-     di localStorage agar game 100% memakai soal terbaru.
-   - Normalisasi Teks: Hapus prefix opsi ('A. ', 'B. ', '1. '),
-     trim spasi, dan abaikan huruf besar/kecil.
-   - Logika Pencocokan Serbaguna: Mendukung teks, indeks/angka,
-     dan huruf ('A'/'B'/'C'/'D') secara bersamaan.
+   Mengelola bank soal game dengan sistem Indeks Kunci Jawaban (kunciIndex 0..3):
+   - Pembersihan Cache: localStorage.removeItem('quiz_data') saat upload baru.
+   - Validasi Berbasis Urutan Tombol: (indexTombolDiklik === soal.kunciIndex).
    ========================================================= */
 
 (function () {
@@ -16,37 +12,37 @@
   const OLD_STORAGE_KEYS = ["islamgame_questions_v1", "dreamtown_questions"];
 
   /* ------------------------------------------------------------------
-     Soal Fallback Bawaan (hanya jika localStorage kosong & tidak ada upload)
+     Soal Fallback Bawaan (menggunakan kunciIndex 0..3)
   ------------------------------------------------------------------ */
   const FALLBACK_QUESTIONS = [
     {
       question: "Siapakah nabi terakhir umat Islam?",
       options: ["Nabi Isa AS", "Nabi Musa AS", "Nabi Muhammad SAW", "Nabi Ibrahim AS"],
-      correctIndex: 2
+      kunciIndex: 2
     },
     {
       question: "Berapa jumlah rukun Islam?",
       options: ["3", "4", "5", "6"],
-      correctIndex: 2
+      kunciIndex: 2
     },
     {
       question: "Kitab suci umat Islam adalah...",
       options: ["Injil", "Taurat", "Zabur", "Al-Qur'an"],
-      correctIndex: 3
+      kunciIndex: 3
     },
     {
       question: "Shalat fardhu dalam sehari semalam berjumlah...",
       options: ["3 waktu", "4 waktu", "5 waktu", "6 waktu"],
-      correctIndex: 2
+      kunciIndex: 2
     },
     {
       question: "Bulan ke-9 dalam kalender Hijriyah adalah bulan...",
       options: ["Syawal", "Ramadan", "Dzulhijjah", "Muharram"],
-      correctIndex: 1
+      kunciIndex: 1
     }
   ];
 
-  /* ── Normalisasi Teks: Hapus prefix A. B. 1. dll, trim spasi ── */
+  /* ── Normalisasi Teks Tombol Opsi: Hapus prefix A. B. 1. dll, trim spasi ── */
   function cleanOptionText(text) {
     if (text === null || text === undefined) return "";
     let str = String(text).trim();
@@ -68,7 +64,7 @@
     return a;
   }
 
-  /* ── Reset Cache Upload ── */
+  /* ── Pembersihan Cache ── */
   function clearAllQuizCache() {
     try {
       localStorage.removeItem(STORAGE_KEY_PRIMARY);
@@ -86,8 +82,30 @@
       if (!raw) return null;
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        console.log("[Questions] Soal dimuat dari localStorage:", parsed.length, "soal.");
-        return parsed;
+        // Standardisasi setiap item agar memiliki kunciIndex (0..3)
+        const normalized = parsed.map(item => {
+          let kIdx = 0;
+          if (item.kunciIndex !== undefined) {
+            kIdx = Number(item.kunciIndex);
+          } else if (item.correctIndex !== undefined) {
+            kIdx = Number(item.correctIndex);
+          } else if (item.jawaban !== undefined || item.kunci !== undefined) {
+            const rawK = item.jawaban || item.kunci;
+            if (typeof rawK === "number") kIdx = rawK;
+            else if (typeof rawK === "string") {
+              const letter = rawK.trim().toUpperCase();
+              if (letter >= "A" && letter <= "D") kIdx = letter.charCodeAt(0) - 65;
+              else if (!isNaN(parseInt(letter, 10))) kIdx = Math.max(0, parseInt(letter, 10) - 1);
+            }
+          }
+          return {
+            question: item.question || item.soal || item.pertanyaan || "",
+            options: item.options || item.opsi || [],
+            kunciIndex: Math.max(0, Math.min(3, kIdx))
+          };
+        });
+        console.log("[Questions] Soal dimuat dari localStorage:", normalized.length, "soal.");
+        return normalized;
       }
     } catch (e) {
       console.warn("[Questions] Gagal membaca localStorage:", e);
@@ -97,69 +115,39 @@
 
   /* ── Simpan Soal ke localStorage (Timpa Penuh) ── */
   function saveToStorage(questions) {
-    clearAllQuizCache(); // Hapus cache lama terlebih dahulu sesuai instruksi
+    clearAllQuizCache(); // Hapus cache lama terlebih dahulu (localStorage.removeItem('quiz_data'))
     try {
-      localStorage.setItem(STORAGE_KEY_PRIMARY, JSON.stringify(questions));
-      console.log("[Questions] ✅ " + questions.length + " soal baru berhasil disimpan ke localStorage ('quiz_data').");
+      const formattedQuestions = questions.map(q => ({
+        question: q.question || q.soal || q.pertanyaan || "",
+        options: Array.isArray(q.options) ? q.options : [],
+        kunciIndex: (q.kunciIndex !== undefined) ? Number(q.kunciIndex) : ((q.correctIndex !== undefined) ? Number(q.correctIndex) : 0)
+      }));
+      localStorage.setItem(STORAGE_KEY_PRIMARY, JSON.stringify(formattedQuestions));
+      console.log("[Questions] ✅ " + formattedQuestions.length + " soal baru disimpan ke localStorage ('quiz_data').");
     } catch (e) {
       console.warn("[Questions] Gagal menyimpan soal ke localStorage:", e);
     }
   }
 
-  /* ── Logika Pencocokan Serbaguna & Normalisasi Jawaban (Diagnostik Alert) ── */
-  function checkAnswer(question, chosenIdx, chosenRawText) {
-    // Clean user choice text (.trim() dan hapus prefix opsi)
-    const userChoiceClean = cleanOptionText(chosenRawText);
-    const userChoiceLower = userChoiceClean.toLowerCase();
-
-    // Tentukan kunci sistem dalam bentuk indeks & teks target pilihan yang benar
-    let targetIndex = 0;
-    if (question.correctIndex !== undefined) {
-      targetIndex = question.correctIndex;
-    } else {
-      const rawKey = question.correctAnswer || question.jawaban || question.kunci;
-      if (typeof rawKey === "number") {
-        targetIndex = rawKey;
-      } else if (typeof rawKey === "string") {
-        const keyClean = cleanOptionText(rawKey).toUpperCase();
-        if (keyClean.length === 1 && keyClean >= "A" && keyClean <= "D") {
-          targetIndex = keyClean.charCodeAt(0) - 65;
-        } else if (Array.isArray(question.options)) {
-          const found = question.options.findIndex(opt => cleanOptionText(opt).toLowerCase() === keyClean.toLowerCase());
-          if (found !== -1) targetIndex = found;
-        }
-      }
+  /* ── Validasi Berbasis Urutan Tombol (Anti-Gagal) ── */
+  function checkAnswer(question, indexTombolDiklik) {
+    // Ambil kunciIndex soal (0..3)
+    let kunciIndex = 0;
+    if (question && question.kunciIndex !== undefined) {
+      kunciIndex = Number(question.kunciIndex);
+    } else if (question && question.correctIndex !== undefined) {
+      kunciIndex = Number(question.correctIndex);
     }
 
-    // Ambil opsi target berdasarkan targetIndex
-    const rawTargetOpt = (Array.isArray(question.options) && question.options[targetIndex]) ? question.options[targetIndex] : "";
-    const targetKeyClean = cleanOptionText(rawTargetOpt);
-    const targetKeyLower = targetKeyClean.toLowerCase();
+    // Bandingkan secara langsung: indexTombolDiklik === soal.kunciIndex
+    const isCorrect = (indexTombolDiklik === kunciIndex);
 
-    // Pencocokan: periksa indeks langsung ATAU perbandingan teks ter-normalisasi (lowercase + trim)
-    let isCorrect = (chosenIdx === targetIndex);
-
-    if (!isCorrect && userChoiceLower.length > 0 && targetKeyLower.length > 0) {
-      if (userChoiceLower === targetKeyLower) {
-        isCorrect = true;
-      }
-    }
-
-    // ── Pop-Up Alert Diagnostik di Layar ──
-    const alertMessage = 
-      "🔍 DIAGNOSTIK KUIS 🔍\n" +
-      "-----------------------------------\n" +
-      "User memilih: " + userChoiceClean + "\n" +
-      "Kunci Sistem: " + targetKeyClean + "\n" +
-      "Hasil Cocok?: " + (isCorrect ? "✅ BENAR" : "❌ SALAH");
-
-    alert(alertMessage);
+    console.log("[Questions] 🎯 Tombol Diklik Index:", indexTombolDiklik, "| Kunci Index Sistem:", kunciIndex, "| Hasil:", isCorrect ? "✅ BENAR" : "❌ SALAH");
 
     return {
       isCorrect: isCorrect,
-      userChoiceClean: userChoiceClean,
-      targetKeyClean: targetKeyClean,
-      targetIndex: targetIndex
+      kunciIndex: kunciIndex,
+      indexTombolDiklik: indexTombolDiklik
     };
   }
 

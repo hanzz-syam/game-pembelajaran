@@ -90,7 +90,7 @@
   /**
    * Parsing data dari file Excel (.xlsx, .xls) atau CSV menggunakan SheetJS (XLSX).
    * @param {ArrayBuffer} arrayBuffer
-   * @returns {Array<{question:string, options:string[], correctIndex:number}>}
+   * @returns {Array<{question:string, options:string[], kunciIndex:number}>}
    */
   function parseExcelOrCSVData(arrayBuffer) {
     if (!window.XLSX) {
@@ -144,26 +144,26 @@
         const validOptions = options.filter((o) => o.length > 0);
         if (validOptions.length < 2) continue;
 
-        let correctIndex = 0;
+        let kunciIndex = 0;
         if (answerVal) {
           const letter = answerVal.toUpperCase().trim();
           if (letter.length === 1 && letter >= "A" && letter <= "D") {
-            correctIndex = letter.charCodeAt(0) - 65;
+            kunciIndex = letter.charCodeAt(0) - 65;
           } else if (!isNaN(parseInt(letter, 10))) {
             const num = parseInt(letter, 10);
-            correctIndex = num >= 1 ? num - 1 : num;
+            kunciIndex = num >= 1 ? num - 1 : num;
           } else {
             const matchIdx = validOptions.findIndex((o) => o.toLowerCase() === answerVal.toLowerCase());
-            if (matchIdx !== -1) correctIndex = matchIdx;
+            if (matchIdx !== -1) kunciIndex = matchIdx;
           }
         }
 
-        if (correctIndex < 0 || correctIndex >= validOptions.length) correctIndex = 0;
+        if (kunciIndex < 0 || kunciIndex >= validOptions.length) kunciIndex = 0;
 
         questions.push({
           question: questionText,
           options: validOptions,
-          correctIndex: correctIndex
+          kunciIndex: kunciIndex
         });
       }
 
@@ -196,7 +196,7 @@
         if (!qText || !Array.isArray(opts) || opts.length < 2) continue;
         
         let correctIdx = 0;
-        const ans = item.correctIndex !== undefined ? item.correctIndex : (item.jawaban || item.kunci);
+        const ans = item.kunciIndex !== undefined ? item.kunciIndex : (item.correctIndex !== undefined ? item.correctIndex : (item.jawaban || item.kunci));
 
         if (typeof ans === "number") {
           correctIdx = ans;
@@ -213,7 +213,7 @@
         parsed.push({
           question: String(qText).trim(),
           options: opts.map(o => String(o).trim()),
-          correctIndex: Math.max(0, Math.min(opts.length - 1, correctIdx))
+          kunciIndex: Math.max(0, Math.min(opts.length - 1, correctIdx))
         });
       }
       return parsed;
@@ -317,8 +317,8 @@
       if (options.length < 2) continue;
       while (options.length > 4) { options.pop(); optLetters.pop(); }
 
-      // Ekstrak kunci jawaban dengan pembersihan dan konversi yang akurat
-      let correctIndex = 0;
+      // Ekstrak kunci jawaban dengan pembersihan dan konversi yang akurat ke angka indeks (0..3)
+      let kunciIndex = 0;
       // Cari baris/fragmen kunci jawaban
       const kunciLineMatch = block.match(/(?:Kunci(?:\s*Jawaban)?|Jawaban|Ans(?:wer)?|Key)\s*[:=.]?\s*([^\n]+)/i);
 
@@ -335,21 +335,21 @@
         if (charMatch) {
           const val = charMatch[1];
           if (val >= "A" && val <= "D") {
-            // Konversi Huruf Kunci (A, B, C, D) ke indeks pilihan (0, 1, 2, 3)
+            // Konversi Huruf Kunci (A=0, B=1, C=2, D=3)
             const foundIdx = optLetters.indexOf(val);
-            correctIndex = foundIdx !== -1 ? foundIdx : val.charCodeAt(0) - 65;
+            kunciIndex = foundIdx !== -1 ? foundIdx : val.charCodeAt(0) - 65;
           } else if (val >= "1" && val <= "4") {
-            correctIndex = parseInt(val, 10) - 1;
+            kunciIndex = parseInt(val, 10) - 1;
           }
         } else {
           // Jika kunci berupa teks isi jawaban, cocokkan dengan pilihan
           const matchIdx = options.findIndex(opt => opt.trim().toUpperCase() === rawKunci);
-          if (matchIdx !== -1) correctIndex = matchIdx;
+          if (matchIdx !== -1) kunciIndex = matchIdx;
         }
       }
 
-      correctIndex = Math.max(0, Math.min(options.length - 1, correctIndex));
-      questions.push({ question: questionText, options, correctIndex });
+      kunciIndex = Math.max(0, Math.min(options.length - 1, kunciIndex));
+      questions.push({ question: questionText, options, kunciIndex: kunciIndex });
     }
 
     return questions;
@@ -387,7 +387,7 @@
       }
       if (options.length < 2) continue;
 
-      let correctIndex = 0;
+      let kunciIndex = 0;
       const km = para.match(/(?:Kunci(?:\s*Jawaban)?|Jawaban|Ans(?:wer)?|Key)\s*[:=.]?\s*([^\n]+)/i);
       if (km) {
         let rawKunci = km[1]
@@ -400,17 +400,17 @@
           const v = charMatch[1];
           if (v >= "A" && v <= "D") {
             const fi = optLetters.indexOf(v);
-            correctIndex = fi !== -1 ? fi : v.charCodeAt(0) - 65;
+            kunciIndex = fi !== -1 ? fi : v.charCodeAt(0) - 65;
           } else if (v >= "1" && v <= "4") {
-            correctIndex = parseInt(v, 10) - 1;
+            kunciIndex = parseInt(v, 10) - 1;
           }
         } else {
           const matchIdx = options.findIndex(opt => opt.trim().toUpperCase() === rawKunci);
-          if (matchIdx !== -1) correctIndex = matchIdx;
+          if (matchIdx !== -1) kunciIndex = matchIdx;
         }
       }
 
-      questions.push({ question: qText, options, correctIndex: Math.max(0, Math.min(options.length - 1, correctIndex)) });
+      questions.push({ question: qText, options, kunciIndex: Math.max(0, Math.min(options.length - 1, kunciIndex)) });
     }
     return questions;
   }
@@ -419,44 +419,55 @@
      HAPUS DATA LAMA & TERAPKAN SOAL BARU
      1. localStorage.removeItem('quiz_data') — hapus data lama
      2. Simpan data baru ke localStorage('quiz_data')
-     3. window.activeQuestions = parsedData (timpa langsung)
+     3. window.activeQuestions = formattedData (timpa langsung)
      4. Reset questionIndex & dispatch event pdfQuizLoaded
   ================================================================ */
   function applyParsedQuestions(parsedData, fileName) {
     if (!Array.isArray(parsedData) || parsedData.length === 0) return false;
 
-    // Langkah 1: Hapus data kuis lama dari localStorage
-    localStorage.removeItem("quiz_data");
-    ["islamgame_questions_v1", "dreamtown_questions"].forEach(k => localStorage.removeItem(k));
-    console.log("[PDFParser] Data kuis lama (quiz_data) dihapus dari localStorage.");
+    // Standardisasi format data soal agar selalu menyimpan kunciIndex (0..3)
+    const formattedData = parsedData.map(q => ({
+      question: q.question || q.soal || q.pertanyaan || "",
+      options: Array.isArray(q.options) ? q.options : [],
+      kunciIndex: (q.kunciIndex !== undefined) ? Number(q.kunciIndex) : ((q.correctIndex !== undefined) ? Number(q.correctIndex) : 0)
+    }));
 
-    // Langkah 2: Simpan data baru ke localStorage
+    // Langkah 1: Wajib jalankan localStorage.removeItem('quiz_data') dan timpa data kuis secara keseluruhan
     try {
-      localStorage.setItem("quiz_data", JSON.stringify(parsedData));
-      console.log("[PDFParser] " + parsedData.length + " soal dari '" + fileName + "' disimpan ke localStorage('quiz_data').");
+      localStorage.removeItem("quiz_data");
+      ["islamgame_questions_v1", "dreamtown_questions"].forEach(k => localStorage.removeItem(k));
+      console.log("[PDFParser] 🗑️ localStorage.removeItem('quiz_data') berhasil dijalankan.");
+    } catch (e) {
+      console.warn("[PDFParser] Gagal menghapus localStorage:", e);
+    }
+
+    // Langkah 2: Simpan data baru yang sudah bersih ke localStorage
+    try {
+      localStorage.setItem("quiz_data", JSON.stringify(formattedData));
+      console.log("[PDFParser] ✅ " + formattedData.length + " soal dari '" + fileName + "' disimpan ke localStorage('quiz_data').");
     } catch (e) {
       console.warn("[PDFParser] Gagal menyimpan ke localStorage:", e);
     }
 
     // Langkah 3: Perbarui QuestionsModule (sumber data utama game)
     if (window.QuestionsModule && typeof window.QuestionsModule.setQuestionsFromPDF === "function") {
-      window.QuestionsModule.setQuestionsFromPDF(parsedData);
+      window.QuestionsModule.setQuestionsFromPDF(formattedData);
     }
 
     // Langkah 4: Timpa window.activeQuestions secara langsung
-    window.activeQuestions = parsedData.slice();
-    console.log("[PDFParser] window.activeQuestions diperbarui:", parsedData.length, "soal.");
+    window.activeQuestions = formattedData.slice();
+    console.log("[PDFParser] window.activeQuestions diperbarui:", formattedData.length, "soal.");
 
     // Langkah 5: Reset questionIndex ke 0 & trigger live-reload panel kuis
     if (window.QuizController && typeof window.QuizController.reloadWithNewQuestions === "function") {
-      window.QuizController.reloadWithNewQuestions(parsedData);
+      window.QuizController.reloadWithNewQuestions(formattedData);
     } else {
       // Dispatch custom event agar game.js bisa menangkap & reload kuis
       const event = new CustomEvent("pdfQuizLoaded", {
-        detail: { questions: parsedData, count: parsedData.length, source: fileName }
+        detail: { questions: formattedData, count: formattedData.length, source: fileName }
       });
       window.dispatchEvent(event);
-      console.log("[PDFParser] Event 'pdfQuizLoaded' dikirim dengan", parsedData.length, "soal.");
+      console.log("[PDFParser] Event 'pdfQuizLoaded' dikirim dengan", formattedData.length, "soal.");
     }
 
     return true;
