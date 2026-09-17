@@ -16,6 +16,7 @@
   let bridges = [];
   let clouds = [];
   let sparkles = [];
+  let rainbowMesh = null;
   let ambientLight, sunLight, hemiLight;
   let townIsland = null;
 
@@ -64,6 +65,7 @@
     buildSkyIslandChain(window.QuestionsModule.getQuestionCount());
     buildClouds();
     buildSkySparkles();
+    buildRainbow();
 
     window.addEventListener("resize", onWindowResize);
 
@@ -320,24 +322,69 @@
   function expandTreeDensityAndVariety(questionIndex) {
     if (!islands || !islands.length) return;
 
+    const TREE_MIN_DIST = 2.8;   // Radius penjarakan minimum antar pohon
+    const MAX_ATTEMPTS = 20;     // Batas maksimum upaya penempatan per pohon
+
     islands.forEach((island, iIndex) => {
       if (island.userData.isTown) return;
 
       const rad = island.userData.radius || ISLAND_RADIUS;
       const GROUND_Y = 0.7;
 
-      const extraTreeCount = 1 + Math.floor(Math.random() * 2);
-      for (let k = 0; k < extraTreeCount; k++) {
-        const angle = Math.random() * Math.PI * 2;
-        const dist = 2.0 + Math.random() * (rad * 0.55);
-        const tx = Math.cos(angle) * dist;
-        const tz = Math.sin(angle) * dist;
+      // Kumpulkan posisi pohon yang sudah ada di pulau ini
+      const existingTrees = [];
+      island.traverse((child) => {
+        if (child.name && child.name.startsWith("Tree_")) {
+          existingTrees.push({ x: child.position.x, z: child.position.z });
+        }
+      });
 
-        if (Math.hypot(tx, tz) < 1.8) continue;
+      const extraTreeCount = 1 + Math.floor(Math.random() * 2);
+
+      for (let k = 0; k < extraTreeCount; k++) {
+        let placed = false;
+        let tx, tz;
+
+        for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+          const angle = Math.random() * Math.PI * 2;
+          const dist = 2.0 + Math.random() * (rad * 0.55);
+          tx = Math.cos(angle) * dist;
+          tz = Math.sin(angle) * dist;
+
+          // Jangan terlalu dekat pusat pulau
+          if (Math.hypot(tx, tz) < 1.8) continue;
+
+          // Jangan terlalu dekat tepi pulau
+          if (Math.hypot(tx, tz) > rad * 0.88) continue;
+
+          // Periksa jarak terhadap semua pohon yang sudah ada
+          let tooClose = false;
+          for (const existing of existingTrees) {
+            if (Math.hypot(tx - existing.x, tz - existing.z) < TREE_MIN_DIST) {
+              tooClose = true;
+              break;
+            }
+          }
+
+          if (tooClose) {
+            console.log(`[World] ⚠️ Pohon di pulau ${iIndex} upaya ${attempt + 1}: posisi (${tx.toFixed(2)}, ${tz.toFixed(2)}) terlalu dekat pohon lain, coba lagi.`);
+            continue;
+          }
+
+          // Posisi valid — catat dan keluar dari loop percobaan
+          existingTrees.push({ x: tx, z: tz });
+          placed = true;
+          break;
+        }
+
+        if (!placed) {
+          console.log(`[World] ❌ Pohon ke-${k + 1} di pulau ${iIndex} GAGAL ditempatkan setelah ${MAX_ATTEMPTS} percobaan (pulau terlalu padat).`);
+          continue;
+        }
 
         const species = TREE_SPECIES[Math.floor(Math.random() * TREE_SPECIES.length)];
         const treeMesh = createTreeBySpecies(species, tx, GROUND_Y, tz);
-        
+
         treeMesh.scale.setScalar(0.01);
         island.add(treeMesh);
 
@@ -422,6 +469,62 @@
       sparkles.push(mesh);
       scene.add(mesh);
     }
+  }
+
+  // ---------------- Pelangi Langit ----------------
+
+  /**
+   * Bangun pelangi melengkung indah di langit latar belakang.
+   * Dibuat dari 7 lapisan TorusGeometry (cincin tipis) dengan warna spektrum.
+   * Diposisikan jauh di belakang pulau agar tidak menghalangi UI.
+   */
+  function buildRainbow() {
+    // 7 pita warna pelangi (dari luar ke dalam)
+    const RAINBOW_COLORS = [
+      0xff0000, // Merah
+      0xff7700, // Jingga
+      0xffee00, // Kuning
+      0x00cc44, // Hijau
+      0x0066ff, // Biru
+      0x4400cc, // Nila
+      0xcc00ff  // Ungu
+    ];
+
+    const rainbowGroup = new THREE.Group();
+    rainbowGroup.name = "Rainbow";
+
+    const BASE_RADIUS = 38;
+    const BAND_THICKNESS = 1.05;
+    const TUBE_RADIUS = 1.8;
+
+    RAINBOW_COLORS.forEach((color, i) => {
+      const radius = BASE_RADIUS - i * BAND_THICKNESS;
+      const geo = new THREE.TorusGeometry(radius, TUBE_RADIUS, 12, 80, Math.PI);
+      const mat = new THREE.MeshStandardMaterial({
+        color: color,
+        emissive: color,
+        emissiveIntensity: 0.22,
+        transparent: true,
+        opacity: 0.52 - i * 0.015,
+        side: THREE.DoubleSide,
+        roughness: 0.6,
+        depthWrite: false
+      });
+      const band = new THREE.Mesh(geo, mat);
+      rainbowGroup.add(band);
+    });
+
+    // Posisikan pelangi jauh di langit latar belakang
+    // x: di tengah rantai pulau, y: tinggi di langit, z: jauh ke belakang
+    const centerX = (window.QuestionsModule ? window.QuestionsModule.getQuestionCount() : 3) * ISLAND_SPACING * 0.5;
+    rainbowGroup.position.set(centerX, 22, -75);
+    // Rotasikan agar setengah lingkaran menghadap pemain
+    rainbowGroup.rotation.x = 0; // setengah busur mengarah ke atas
+
+    rainbowGroup.userData = { baseY: 22, pulse: 0 };
+    scene.add(rainbowGroup);
+    rainbowMesh = rainbowGroup;
+    return rainbowGroup;
   }
 
   // ---------------- Sky Islands HD ----------------
@@ -666,6 +769,18 @@
         bridge.ring.rotation.z += delta * 0.45;
       }
     });
+
+    // Animasi pelangi: naik-turun lembut + denyut opacity ringan
+    if (rainbowMesh) {
+      rainbowMesh.userData.pulse = (rainbowMesh.userData.pulse || 0) + delta * 0.18;
+      const sway = Math.sin(rainbowMesh.userData.pulse) * 0.35;
+      rainbowMesh.position.y = rainbowMesh.userData.baseY + sway;
+      rainbowMesh.children.forEach((band, i) => {
+        if (band.material) {
+          band.material.opacity = (0.52 - i * 0.015) + Math.sin(rainbowMesh.userData.pulse + i * 0.4) * 0.04;
+        }
+      });
+    }
 
     if (window.NPCModule) {
       window.NPCModule.updateNPCs(delta, elapsed);
