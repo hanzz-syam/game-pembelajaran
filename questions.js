@@ -1,46 +1,20 @@
 /* =========================================================
    questions.js
    Mengelola bank soal game dengan sistem Indeks Kunci Jawaban (kunciIndex 0..3):
-   - Pembersihan Cache: localStorage.removeItem('quiz_data') saat upload baru.
+   - Kunci Storage Seragam: 'GAME_QUIZ_DATA' di semua file.
    - Validasi Berbasis Urutan Tombol: (indexTombolDiklik === soal.kunciIndex).
    ========================================================= */
 
 (function () {
   "use strict";
 
-  const STORAGE_KEY_PRIMARY = "quiz_data";
-  const OLD_STORAGE_KEYS = ["islamgame_questions_v1", "dreamtown_questions"];
+  const STORAGE_KEY_PRIMARY = "GAME_QUIZ_DATA";
+  const OLD_STORAGE_KEYS = ["quiz_data", "islamgame_questions_v1", "dreamtown_questions"];
 
   /* ------------------------------------------------------------------
-     Soal Fallback Bawaan (menggunakan kunciIndex 0..3)
+     Soal Fallback Bawaan (Dikosongkan sesuai instruksi: Tanpa Soal Bawaan)
   ------------------------------------------------------------------ */
-  const FALLBACK_QUESTIONS = [
-    {
-      question: "Siapakah nabi terakhir umat Islam?",
-      options: ["Nabi Isa AS", "Nabi Musa AS", "Nabi Muhammad SAW", "Nabi Ibrahim AS"],
-      kunciIndex: 2
-    },
-    {
-      question: "Berapa jumlah rukun Islam?",
-      options: ["3", "4", "5", "6"],
-      kunciIndex: 2
-    },
-    {
-      question: "Kitab suci umat Islam adalah...",
-      options: ["Injil", "Taurat", "Zabur", "Al-Qur'an"],
-      kunciIndex: 3
-    },
-    {
-      question: "Shalat fardhu dalam sehari semalam berjumlah...",
-      options: ["3 waktu", "4 waktu", "5 waktu", "6 waktu"],
-      kunciIndex: 2
-    },
-    {
-      question: "Bulan ke-9 dalam kalender Hijriyah adalah bulan...",
-      options: ["Syawal", "Ramadan", "Dzulhijjah", "Muharram"],
-      kunciIndex: 1
-    }
-  ];
+  const FALLBACK_QUESTIONS = [];
 
   /* ── Normalisasi Teks Tombol Opsi: Hapus prefix A. B. 1. dll, trim spasi ── */
   function cleanOptionText(text) {
@@ -67,18 +41,21 @@
   /* ── Pembersihan Cache ── */
   function clearAllQuizCache() {
     try {
-      localStorage.removeItem(STORAGE_KEY_PRIMARY);
+      // Hapus kunci lama (quiz_data dll) tapi TIDAK menghapus GAME_QUIZ_DATA
       OLD_STORAGE_KEYS.forEach((key) => localStorage.removeItem(key));
-      console.log("[Questions] 🗑️ Data kuis lama di localStorage ('quiz_data') berhasil dihapus.");
+      localStorage.removeItem(STORAGE_KEY_PRIMARY);
+      console.log("[Questions] 🗑️ Cache kuis dihapus (GAME_QUIZ_DATA + kunci lama).");
     } catch (e) {
       console.warn("[Questions] Gagal menghapus cache localStorage:", e);
     }
   }
 
+  /* ── TIDAK auto-clear saat dimuat — data Guru harus tetap tersimpan ── */
+
   /* ── Baca Soal dari localStorage ── */
   function loadFromStorage() {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY_PRIMARY) || localStorage.getItem("islamgame_questions_v1");
+      const raw = localStorage.getItem(STORAGE_KEY_PRIMARY);
       if (!raw) return null;
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
@@ -123,7 +100,7 @@
         kunciIndex: (q.kunciIndex !== undefined) ? Number(q.kunciIndex) : ((q.correctIndex !== undefined) ? Number(q.correctIndex) : 0)
       }));
       localStorage.setItem(STORAGE_KEY_PRIMARY, JSON.stringify(formattedQuestions));
-      console.log("[Questions] ✅ " + formattedQuestions.length + " soal baru disimpan ke localStorage ('quiz_data').");
+      console.log("GURU: Berhasil menyimpan", formattedQuestions.length, "soal ke GAME_QUIZ_DATA.");
     } catch (e) {
       console.warn("[Questions] Gagal menyimpan soal ke localStorage:", e);
     }
@@ -151,12 +128,9 @@
     };
   }
 
-  /* ── State Aktif ── */
+  /* ── State Aktif (Kosong saat awal jika belum ada upload) ── */
   const fromStorage = loadFromStorage();
-  let activeQuestions = fromStorage
-    ? shuffle(fromStorage)
-    : shuffle(FALLBACK_QUESTIONS.slice());
-
+  let activeQuestions = fromStorage ? shuffle(fromStorage) : [];
   let usingCustomFile = fromStorage !== null;
 
   /* ── API Publik ── */
@@ -196,5 +170,5 @@
   };
 
   console.log("[Questions] questions.js dimuat OK. Soal aktif:", activeQuestions.length,
-    usingCustomFile ? "(dari localStorage quiz_data)" : "(fallback bawaan)");
+    usingCustomFile ? "(dari localStorage GAME_QUIZ_DATA)" : "(belum ada soal — Guru belum upload)");
 })();

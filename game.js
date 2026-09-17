@@ -40,7 +40,9 @@
       "loading-screen", "loading-progress", "loading-text",
       "start-screen", "btn-mode-student", "btn-mode-teacher",
       "teacher-upload-screen", "teacher-upload-input", "teacher-upload-status",
-      "teacher-upload-summary", "teacher-upload-count", "btn-teacher-start", "btn-teacher-upload-back",
+      "teacher-upload-summary", "teacher-upload-count", "teacher-preview-section", "teacher-preview-list",
+      "teacher-paste-textarea", "btn-process-paste", "teacher-paste-status",
+      "btn-teacher-start", "btn-teacher-upload-back",
       "teacher-screen", "teacher-pin", "btn-new-pin", "btn-clear-leaderboard", "leaderboard-list", "btn-teacher-back",
       "join-screen", "student-name", "student-pin", "btn-join-class", "btn-join-back",
       "game-container", "game-canvas",
@@ -55,6 +57,8 @@
     ];
     ids.forEach((id) => (dom[id] = document.getElementById(id)));
   }
+
+  let teacherDraftQuestions = [];
 
   // ---------------- Loading sequence ----------------
   function runLoadingSequence(callback) {
@@ -90,6 +94,14 @@
   // ---------------- Init flow ----------------
   function init() {
     cacheDom();
+
+    // JANGAN hapus GAME_QUIZ_DATA saat halaman dimuat
+    // agar data yang sudah disimpan Guru tetap bisa dibaca Murid
+    // Hanya bersihkan kunci-kunci lama yang sudah tidak dipakai
+    try {
+      ["quiz_data", "islamgame_questions_v1", "dreamtown_questions"].forEach(k => localStorage.removeItem(k));
+    } catch (e) { /* ignore */ }
+
     runLoadingSequence(() => {
       showScreen("start-screen");
       window.AudioModule.playMenuBGM();
@@ -106,29 +118,53 @@
     dom["btn-mode-teacher"].addEventListener("click", () => {
       window.AudioModule.ensureContext();
       window.AudioModule.playMenuBGM();
+
+      // Kosongkan draf soal lokal TAPI jangan hapus GAME_QUIZ_DATA
+      // agar Guru bisa lihat soal lama sambil menyiapkan yang baru
+      teacherDraftQuestions = [];
+
+      // Reset File Input
+      if (dom["teacher-upload-input"]) dom["teacher-upload-input"].value = "";
+
+      // Reset Paste Textarea
+      if (dom["teacher-paste-textarea"]) dom["teacher-paste-textarea"].value = "";
+      if (dom["teacher-paste-status"]) {
+        dom["teacher-paste-status"].textContent = "";
+        dom["teacher-paste-status"].style.color = "#64748b";
+      }
+
+      // Sembunyikan Preview & Ringkasan, Matikan Tombol Mulai Game
+      if (dom["teacher-preview-section"]) dom["teacher-preview-section"].classList.add("hidden");
+      if (dom["teacher-upload-summary"]) dom["teacher-upload-summary"].classList.add("hidden");
+      if (dom["btn-teacher-start"]) dom["btn-teacher-start"].disabled = true;
+
+      // Status Indikator Abu-Abu
+      if (dom["teacher-upload-status"]) {
+        dom["teacher-upload-status"].textContent = "Belum ada file soal yang dipilih";
+        dom["teacher-upload-status"].style.color = "#64748b";
+      }
+
       showScreen("teacher-upload-screen");
     });
 
-    // Tombol MURID → cek apakah soal sudah disiapkan Guru
+    // Tombol MURID → baca GAME_QUIZ_DATA, jangan hapus apapun
     dom["btn-mode-student"].addEventListener("click", () => {
       window.AudioModule.ensureContext();
       window.AudioModule.playMenuBGM();
 
-      // Cek apakah ada soal di localStorage
-      const quizData = localStorage.getItem("quiz_data");
-      let hasQuiz = false;
-      try {
-        if (quizData) {
-          const parsed = JSON.parse(quizData);
-          hasQuiz = Array.isArray(parsed) && parsed.length > 0;
-        }
-      } catch (e) { /* ignore */ }
+      // Baca soal dari kunci resmi GAME_QUIZ_DATA
+      const savedData = JSON.parse(localStorage.getItem("GAME_QUIZ_DATA") || "[]");
 
-      if (hasQuiz) {
-        // Soal tersedia → lanjut ke layar Join
+      if (savedData.length > 0) {
+        // Soal tersedia → muat ke QuestionsModule lalu lanjut ke layar Join
+        if (window.QuestionsModule && typeof window.QuestionsModule.setQuestionsFromPDF === "function") {
+          window.QuestionsModule.setQuestionsFromPDF(savedData);
+        }
+        console.log("[Murid] ✅ Soal berhasil dibaca dari GAME_QUIZ_DATA:", savedData.length, "soal.");
         showScreen("join-screen");
       } else {
-        // Soal belum ada → tampilkan peringatan
+        // Diagnostik: tampilkan isi memori saat ini
+        alert("Isi memori saat ini: " + localStorage.getItem("GAME_QUIZ_DATA"));
         showNoQuizWarning();
       }
     });
@@ -159,6 +195,87 @@
     });
   }
 
+  /* ── Render Layar Preview & Edit Soal untuk Guru ── */
+  function renderTeacherPreview(questions) {
+    if (!dom["teacher-preview-list"] || !Array.isArray(questions)) return;
+
+    dom["teacher-preview-list"].innerHTML = "";
+
+    if (questions.length === 0) {
+      dom["teacher-preview-section"].classList.add("hidden");
+      return;
+    }
+
+    questions.forEach((q, qIdx) => {
+      const card = document.createElement("div");
+      card.className = "preview-card";
+
+      const qText = document.createElement("div");
+      qText.className = "preview-q-text";
+      qText.textContent = `${qIdx + 1}. ${q.question || q.soal || "Pertanyaan"}`;
+      card.appendChild(qText);
+
+      // Daftar Pilihan Opsi
+      const optionsList = document.createElement("div");
+      optionsList.className = "preview-options-list";
+      const labels = ["A", "B", "C", "D"];
+      
+      const opts = Array.isArray(q.options) ? q.options : [];
+      opts.forEach((opt, optIdx) => {
+        const item = document.createElement("div");
+        item.className = "preview-opt-item";
+        const cleanOpt = window.QuestionsModule ? window.QuestionsModule.cleanOptionText(opt) : opt;
+        item.textContent = `${labels[optIdx] || optIdx + 1}. ${cleanOpt}`;
+        optionsList.appendChild(item);
+      });
+      card.appendChild(optionsList);
+
+      // Baris Pemilih Kunci Jawaban (A / B / C / D)
+      const keyRow = document.createElement("div");
+      keyRow.className = "preview-key-row";
+
+      const keyLabel = document.createElement("span");
+      keyLabel.className = "preview-key-label";
+      keyLabel.textContent = "Kunci Jawaban Benar:";
+      keyRow.appendChild(keyLabel);
+
+      const selector = document.createElement("div");
+      selector.className = "preview-key-selector";
+
+      const currentKeyIdx = (q.kunciIndex !== undefined) ? Number(q.kunciIndex) : 0;
+
+      opts.forEach((_, optIdx) => {
+        const letter = labels[optIdx] || String(optIdx + 1);
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "key-btn" + (optIdx === currentKeyIdx ? " active" : "");
+        btn.textContent = letter;
+
+        btn.addEventListener("click", () => {
+          // Update kunciIndex pada objek soal ini
+          q.kunciIndex = optIdx;
+
+          // Update kelas CSS tombol pada baris ini
+          const allKeyBtns = selector.querySelectorAll(".key-btn");
+          allKeyBtns.forEach((b, i) => {
+            if (i === optIdx) b.classList.add("active");
+            else b.classList.remove("active");
+          });
+
+          console.log(`[TeacherEdit] Soal #${qIdx + 1} kunci diubah ke: ${letter} (Index ${optIdx})`);
+        });
+
+        selector.appendChild(btn);
+      });
+
+      keyRow.appendChild(selector);
+      card.appendChild(keyRow);
+      dom["teacher-preview-list"].appendChild(card);
+    });
+
+    dom["teacher-preview-section"].classList.remove("hidden");
+  }
+
   // Handler untuk layar upload soal Guru
   function bindTeacherUploadEvents() {
     dom["teacher-upload-input"].addEventListener("change", async (e) => {
@@ -170,6 +287,7 @@
       dom["teacher-upload-status"].style.color = "#d4a017";
       dom["btn-teacher-start"].disabled = true;
       dom["teacher-upload-summary"].classList.add("hidden");
+      dom["teacher-preview-section"].classList.add("hidden");
 
       // Proses file via PDFParserModule
       const result = await window.PDFParserModule.handlePDFUpload(file);
@@ -178,23 +296,98 @@
       dom["teacher-upload-status"].style.color = result.success ? "#2ea84e" : "#d42e48";
 
       if (result.success) {
-        // Tampilkan ringkasan jumlah soal
+        // Ambil soal yang baru ter-parse
+        teacherDraftQuestions = window.QuestionsModule ? JSON.parse(JSON.stringify(window.QuestionsModule.getQuestions())) : [];
+        
+        // Tampilkan ringkasan & daftar preview soal
         dom["teacher-upload-count"].textContent = "Berhasil memuat " + result.count + " soal";
         dom["teacher-upload-summary"].classList.remove("hidden");
+        
+        // Render preview & edit kunci
+        renderTeacherPreview(teacherDraftQuestions);
+
         // Aktifkan tombol mulai game
         dom["btn-teacher-start"].disabled = false;
       } else {
         dom["teacher-upload-summary"].classList.add("hidden");
+        dom["teacher-preview-section"].classList.add("hidden");
         dom["btn-teacher-start"].disabled = true;
       }
     });
 
-    // Tombol mulai game → buka Teacher Dashboard
+    // Tombol mulai game → simpan kunci pilihan Guru ke localStorage dan buka Dasbor
     dom["btn-teacher-start"].addEventListener("click", () => {
       if (dom["btn-teacher-start"].disabled) return;
+
+      // Simpan kunci pilihan Guru ke GAME_QUIZ_DATA
+      if (window.QuestionsModule && teacherDraftQuestions.length > 0) {
+        window.QuestionsModule.setQuestionsFromPDF(teacherDraftQuestions);
+        localStorage.setItem("GAME_QUIZ_DATA", JSON.stringify(teacherDraftQuestions));
+        console.log("GURU: Berhasil menyimpan", teacherDraftQuestions.length, "soal ke GAME_QUIZ_DATA.");
+      }
+
       window.AudioModule.ensureContext();
       window.AudioModule.playMenuBGM();
       openTeacherDashboard();
+    });
+
+    // Tombol "Proses Teks Soal" → parse teks dari textarea
+    dom["btn-process-paste"].addEventListener("click", () => {
+      const rawText = (dom["teacher-paste-textarea"].value || "").trim();
+      if (!rawText) {
+        dom["teacher-paste-status"].textContent = "⚠️ Textarea kosong. Silakan tempel teks soal terlebih dahulu.";
+        dom["teacher-paste-status"].style.color = "#d42e48";
+        return;
+      }
+
+      dom["teacher-paste-status"].textContent = "⏳ Memproses teks soal...";
+      dom["teacher-paste-status"].style.color = "#d4a017";
+
+      // Parse teks menggunakan parser yang ada di PDFParserModule
+      let parsed = [];
+      if (window.PDFParserModule && typeof window.PDFParserModule.parseQuestionsFromText === "function") {
+        parsed = window.PDFParserModule.parseQuestionsFromText(rawText);
+      }
+
+      // Fallback ke parseByParagraph jika parseQuestionsFromText tidak menemukan soal
+      if (parsed.length === 0 && window.PDFParserModule && typeof window.PDFParserModule.parseByParagraph === "function") {
+        parsed = window.PDFParserModule.parseByParagraph(rawText);
+      }
+
+      if (parsed.length === 0) {
+        dom["teacher-paste-status"].textContent = "❌ Tidak ada soal terdeteksi. Pastikan format: nomor soal, pilihan A/B/C/D, dan (opsional) Kunci: X.";
+        dom["teacher-paste-status"].style.color = "#d42e48";
+        return;
+      }
+
+      // Hapus kunci lama, simpan ke GAME_QUIZ_DATA
+      ["quiz_data", "islamgame_questions_v1", "dreamtown_questions"].forEach(k => localStorage.removeItem(k));
+      localStorage.setItem("GAME_QUIZ_DATA", JSON.stringify(parsed));
+      console.log("GURU: Berhasil menyimpan", parsed.length, "soal ke GAME_QUIZ_DATA.");
+
+      // Sinkronkan ke QuestionsModule
+      if (window.QuestionsModule && typeof window.QuestionsModule.setQuestionsFromPDF === "function") {
+        window.QuestionsModule.setQuestionsFromPDF(parsed);
+      }
+
+      // Update teacherDraftQuestions
+      teacherDraftQuestions = window.QuestionsModule ? JSON.parse(JSON.stringify(window.QuestionsModule.getQuestions())) : parsed.slice();
+
+      // Tampilkan ringkasan & preview
+      dom["teacher-upload-count"].textContent = "Berhasil memuat " + parsed.length + " soal dari teks";
+      dom["teacher-upload-summary"].classList.remove("hidden");
+      renderTeacherPreview(teacherDraftQuestions);
+
+      // Aktifkan tombol mulai game
+      dom["btn-teacher-start"].disabled = false;
+
+      // Update status
+      dom["teacher-paste-status"].textContent = "✅ Berhasil menyimpan " + parsed.length + " soal! Murid sudah bisa masuk.";
+      dom["teacher-paste-status"].style.color = "#2ea84e";
+      dom["teacher-upload-status"].textContent = "Soal dimuat dari Paste Teks (" + parsed.length + " soal)";
+      dom["teacher-upload-status"].style.color = "#2ea84e";
+
+      console.log("[TeacherPaste] ✅ Berhasil memproses", parsed.length, "soal dari teks paste.");
     });
 
     // Tombol kembali → ke role menu

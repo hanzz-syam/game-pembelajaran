@@ -67,11 +67,39 @@
     <div class="pdf-upload-box glass-inner">
       <label for="teacher-upload-input">📁 Unggah File Soal (JSON / CSV / Excel / PDF / TXT)</label>
       <input type="file" id="teacher-upload-input" accept=".json,.csv,.xlsx,.xls,.pdf,.txt,application/json,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,application/pdf,text/plain">
-      <p id="teacher-upload-status" class="pdf-status">Pilih file soal Anda (.json, .csv, .xlsx, .pdf, .txt) untuk memulai.</p>
+      <p id="teacher-upload-status" class="pdf-status" style="color: #64748b;">Belum ada file soal yang dipilih</p>
+    </div>
+
+    <div class="paste-divider"><span>ATAU</span></div>
+
+    <div class="paste-text-box glass-inner">
+      <label for="teacher-paste-textarea">📋 Tempel / Copy-Paste Teks Soal Di Sini</label>
+      <textarea id="teacher-paste-textarea" rows="8" placeholder="Contoh format:
+1. Apa rukun Islam yang pertama?
+A. Shalat
+B. Puasa
+C. Syahadat
+D. Zakat
+Kunci: C
+
+2. Berapa jumlah rakaat shalat Maghrib?
+A. 2
+B. 3
+C. 4
+D. 5
+Kunci: B"></textarea>
+      <button id="btn-process-paste" class="btn-3d btn-blue btn-small">📝 Proses Teks Soal</button>
+      <p id="teacher-paste-status" class="pdf-status" style="color: #64748b;"></p>
     </div>
 
     <div id="teacher-upload-summary" class="upload-summary hidden">
       <span id="teacher-upload-count">0</span>
+    </div>
+
+    <div id="teacher-preview-section" class="preview-section hidden">
+      <h3 class="preview-title">📝 Preview & Edit Kunci Jawaban</h3>
+      <p class="preview-subtitle">Pilih tombol A/B/C/D di setiap soal untuk menentukan kunci yang benar:</p>
+      <div id="teacher-preview-list" class="preview-list"></div>
     </div>
 
     <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
