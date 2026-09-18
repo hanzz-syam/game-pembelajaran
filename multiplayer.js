@@ -20,6 +20,12 @@
   let studentName = null;
   let studentKey = null;
   let classPin = null;
+  try {
+    const savedClass = readClassroomData();
+    if (savedClass && savedClass.pin) {
+      classPin = savedClass.pin;
+    }
+  } catch (e) {}
   let onLeaderboardUpdate = null;
 
   // Firebase References
@@ -192,6 +198,35 @@
   function regeneratePin(customQuestions) {
     cleanupTeacherListeners();
     return startTeacherSession(customQuestions);
+  }
+
+  function resumeTeacherSession() {
+    if (!classPin) {
+      const saved = readClassroomData();
+      classPin = saved ? saved.pin : null;
+    }
+    if (!classPin) return null;
+
+    initChannel();
+    currentRole = "teacher";
+
+    const db = getDb();
+    if (db && !studentsListenerRef) {
+      teacherRoomRef = db.ref("rooms/" + classPin);
+      studentsListenerRef = db.ref("rooms/" + classPin + "/students");
+      studentsListenerRef.on("value", (snapshot) => {
+        const val = snapshot.val() || {};
+        const studentList = Object.values(val).sort((a, b) => (b.score || 0) - (a.score || 0));
+        console.log("[Firebase Guru] 📡 Resume progres murid:", studentList.length, "murid");
+        writeLiveMonitorData(val);
+        notifyLeaderboardUpdate(studentList);
+      }, (err) => {
+        console.warn("[Firebase Guru] Listener murid error:", err);
+      });
+    }
+
+    notifyLeaderboardUpdate();
+    return classPin;
   }
 
   function cleanupTeacherListeners() {
@@ -503,6 +538,7 @@
   window.MultiplayerModule = {
     startTeacherSession,
     regeneratePin,
+    resumeTeacherSession,
     getLeaderboard,
     subscribeLeaderboard,
     joinAsStudent,

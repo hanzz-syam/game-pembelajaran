@@ -114,8 +114,10 @@ Kunci: B"></textarea>
         <div id="teacher-preview-list" class="preview-list"></div>
       </div>
 
-      <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+      <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 15px;">
+        <button id="btn-teacher-resume" class="btn-3d btn-blue btn-large hidden">📊 Lanjut Pantau Murid (PIN: <span id="teacher-resume-pin">------</span>)</button>
         <button id="btn-teacher-start" class="btn-3d btn-green btn-large" disabled>🚀 Mulai Game / Buat Kode</button>
+        <button id="btn-teacher-clear-quiz" class="btn-3d btn-red btn-small hidden" title="Hapus soal tersimpan di browser">🗑️ Hapus Soal</button>
         <button id="btn-teacher-upload-back" class="btn-3d btn-red btn-small">⬅ Kembali</button>
       </div>
     </div>
@@ -323,7 +325,7 @@ Kunci: B"></textarea>
   </div>
 
   <!-- ==================== SCRIPT LOAD ORDER (WAJIB) ==================== -->
-  <script src="firebase-config.js?v=3.1"></script>
+  <script src="firebase-config.js?v=3.2"></script>
   <script src="questions.js?v=2.0"></script>
   <script src="pdf-parser.js?v=2.0"></script>
   <script src="audio.js?v=2.0"></script>
@@ -332,10 +334,10 @@ Kunci: B"></textarea>
   <script src="world.js?v=2.0"></script>
   <script src="player.js?v=2.0"></script>
   <script src="townBuilder.js?v=2.0"></script>
-  <script src="multiplayer.js?v=3.0"></script>
+  <script src="multiplayer.js?v=3.1"></script>
   <!-- Modul pemuatan & penempatan semua model GLB langsung dari folder models/ (tanpa Base64) -->
   <script src="model_loader.js?v=2.0"></script>
-  <script src="game.js?v=3.0"></script>
+  <script src="game.js?v=3.1"></script>
 </body>
 
 </html>
