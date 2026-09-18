@@ -391,7 +391,7 @@
 
   function bindTeacherScreenEvents() {
     dom["btn-new-pin"].addEventListener("click", () => {
-      const pin = window.MultiplayerModule.regeneratePin();
+      const pin = window.MultiplayerModule.regeneratePin(teacherDraftQuestions);
       dom["teacher-pin"].textContent = pin;
     });
 
@@ -447,7 +447,7 @@
   }
 
   function openTeacherDashboard() {
-    const pin = window.MultiplayerModule.startTeacherSession();
+    const pin = window.MultiplayerModule.startTeacherSession(teacherDraftQuestions);
     dom["teacher-pin"].textContent = pin;
     renderLeaderboard(dom["leaderboard-list"]);
     window.MultiplayerModule.subscribeLeaderboard(() => renderLeaderboard(dom["leaderboard-list"]));
