@@ -120,6 +120,35 @@
     return String(Math.floor(100000 + Math.random() * 900000));
   }
 
+  // Batas waktu room dianggap kedaluwarsa: 8 jam
+  const ROOM_MAX_AGE_MS = 8 * 60 * 60 * 1000;
+
+  function cleanupStaleRooms() {
+    const db = getDb();
+    if (!db) return;
+    const cutoff = Date.now() - ROOM_MAX_AGE_MS;
+    db.ref("rooms").once("value")
+      .then((snapshot) => {
+        if (!snapshot.exists()) return;
+        const rooms = snapshot.val() || {};
+        const batch = [];
+        Object.entries(rooms).forEach(([pin, room]) => {
+          const createdAt = room && room.createdAt ? room.createdAt : 0;
+          const isActive = room && room.active === true;
+          // Hapus: room tidak aktif ATAU sudah lebih dari batas usia
+          if (!isActive || createdAt < cutoff) {
+            batch.push(db.ref("rooms/" + pin).remove());
+          }
+        });
+        if (batch.length > 0) {
+          Promise.all(batch).then(() => {
+            console.log("[Firebase] 🧹 Berhasil menghapus", batch.length, "room kedaluwarsa.");
+          }).catch(err => console.warn("[Firebase] Gagal menghapus room lama:", err));
+        }
+      })
+      .catch(err => console.warn("[Firebase] cleanupStaleRooms error:", err));
+  }
+
   // -------------------- Guru (Teacher) Session --------------------
   function startTeacherSession(customQuestions) {
     initChannel();
@@ -127,6 +156,9 @@
 
     // Bersihkan listener lama jika ada
     cleanupTeacherListeners();
+
+    // Hapus room Firebase yang sudah kedaluwarsa sebelum membuat sesi baru
+    cleanupStaleRooms();
 
     classPin = generatePin();
     console.log("[Firebase Guru] Membuka sesi kelas dengan PIN:", classPin);

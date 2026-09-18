@@ -66,6 +66,69 @@
 
   let teacherDraftQuestions = [];
 
+  // -------- Student Session Persistence --------
+  const STUDENT_SESSION_KEY = "GAME_STUDENT_SESSION_v1";
+
+  function saveStudentSession() {
+    if (window.MultiplayerModule && window.MultiplayerModule.getRole() !== "student") return;
+    try {
+      const session = {
+        savedAt: Date.now(),
+        name: window.MultiplayerModule ? window.MultiplayerModule.getStudentName() : null,
+        pin: window.MultiplayerModule ? window.MultiplayerModule.getClassPin() : null,
+        hp: state.hp,
+        score: state.score,
+        coins: state.coins,
+        correctCount: state.correctCount,
+        wrongCount: state.wrongCount,
+        questionIndex: state.questionIndex,
+        answeredIslands: Array.from(state.answeredIslands),
+        isGameOver: state.isGameOver,
+        isLevelComplete: state.isLevelComplete
+      };
+      localStorage.setItem(STUDENT_SESSION_KEY, JSON.stringify(session));
+    } catch (e) {}
+  }
+
+  function loadStudentSession() {
+    try {
+      const raw = localStorage.getItem(STUDENT_SESSION_KEY);
+      if (!raw) return null;
+      const s = JSON.parse(raw);
+      // Anggap sesi kedaluwarsa setelah 4 jam
+      if (!s || !s.savedAt || (Date.now() - s.savedAt) > 4 * 60 * 60 * 1000) {
+        localStorage.removeItem(STUDENT_SESSION_KEY);
+        return null;
+      }
+      // Jangan resume jika game sudah selesai
+      if (s.isGameOver || s.isLevelComplete) {
+        localStorage.removeItem(STUDENT_SESSION_KEY);
+        return null;
+      }
+      return s;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function clearStudentSession() {
+    try {
+      localStorage.removeItem(STUDENT_SESSION_KEY);
+    } catch (e) {}
+  }
+
+  function applyStudentSession(session) {
+    state.hp = session.hp;
+    state.score = session.score;
+    state.coins = session.coins;
+    state.correctCount = session.correctCount || 0;
+    state.wrongCount = session.wrongCount || 0;
+    state.questionIndex = session.questionIndex || 0;
+    state.answeredIslands = new Set(session.answeredIslands || []);
+    state.isGameOver = false;
+    state.isLevelComplete = false;
+  }
+
   // ---------------- Loading sequence ----------------
   function runLoadingSequence(callback) {
     let progress = 0;
@@ -109,14 +172,93 @@
     } catch (e) { /* ignore */ }
 
     runLoadingSequence(() => {
-      showScreen("start-screen");
-      window.AudioModule.playMenuBGM();
+      // Cek apakah ada sesi murid yang bisa di-resume
+      const savedSession = loadStudentSession();
+      if (savedSession) {
+        showResumeStudentPrompt(savedSession);
+      } else {
+        showScreen("start-screen");
+        window.AudioModule.playMenuBGM();
+      }
     });
 
     bindStartScreenEvents();
     bindTeacherUploadEvents();
     bindTeacherScreenEvents();
     bindJoinScreenEvents();
+  }
+
+  function showResumeStudentPrompt(session) {
+    // Hapus overlay lama jika ada
+    const existing = document.getElementById("resume-overlay");
+    if (existing) existing.remove();
+
+    const overlay = document.createElement("div");
+    overlay.id = "resume-overlay";
+    overlay.className = "screen-overlay";
+    overlay.style.cssText = "position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(10,15,35,0.85);z-index:9999;";
+
+    const minsAgo = Math.round((Date.now() - session.savedAt) / 60000);
+    const timeStr = minsAgo < 1 ? "baru saja" : minsAgo + " menit lalu";
+
+    overlay.innerHTML = `
+      <div class="glass" style="max-width:420px;width:90%;padding:32px 28px;text-align:center;border-radius:20px;">
+        <div style="font-size:48px;margin-bottom:12px;">🎮</div>
+        <h2 style="color:#1e3054;margin-bottom:8px;">Lanjutkan Permainan?</h2>
+        <p style="color:#475569;margin-bottom:6px;">Sesi terakhir ditemukan (<strong>${escapeHtml(session.name || 'Murid')}</strong>, ${timeStr})</p>
+        <p style="color:#475569;margin-bottom:20px;">Skor: <strong>${session.score}</strong> &nbsp;|&nbsp; HP: <strong>${session.hp}</strong> &nbsp;|&nbsp; Soal ke-<strong>${session.questionIndex + 1}</strong></p>
+        <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
+          <button id="btn-resume-yes" class="btn-3d btn-green">▶️ Lanjutkan</button>
+          <button id="btn-resume-no" class="btn-3d btn-red btn-small">🔄 Mulai Baru</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    document.getElementById("btn-resume-yes").addEventListener("click", () => {
+      overlay.remove();
+      window.AudioModule.ensureContext();
+      window.AudioModule.playMenuBGM();
+
+      // Pulihkan state dari sesi tersimpan
+      applyStudentSession(session);
+
+      // Pastikan soal terbaca dari localStorage
+      if (session.pin) {
+        // Jika ada PIN, coba re-join (soal sudah ada di localStorage)
+        const localQuiz = JSON.parse(localStorage.getItem("GAME_QUIZ_DATA") || "[]");
+        if (localQuiz.length > 0 && window.QuestionsModule) {
+          window.QuestionsModule.setQuestionsFromPDF(localQuiz);
+        }
+        // Re-daftarkan murid ke Firebase dengan nama & PIN yang sama
+        if (window.MultiplayerModule) {
+          window.MultiplayerModule.connectAndJoin(session.name, session.pin, (res) => {
+            if (res && res.success) {
+              startGame();
+            } else {
+              // Fallback: mulai game dengan soal lokal yang ada
+              startGame();
+            }
+          });
+        } else {
+          startGame();
+        }
+      } else {
+        // Mode offline / tanpa PIN
+        if (window.MultiplayerModule) {
+          window.MultiplayerModule.joinAsStudent(session.name || "Murid", "");
+        }
+        startGame();
+      }
+    });
+
+    document.getElementById("btn-resume-no").addEventListener("click", () => {
+      clearStudentSession();
+      overlay.remove();
+      showScreen("start-screen");
+      window.AudioModule.ensureContext();
+      window.AudioModule.playMenuBGM();
+    });
   }
 
   function loadAndRestoreTeacherData() {
@@ -795,6 +937,7 @@
     dom["btn-close-lb"].addEventListener("click", () => dom["leaderboard-modal"].classList.add("hidden"));
 
     dom["btn-restart"].addEventListener("click", () => {
+      clearStudentSession(); // restart → hapus sesi
       window.location.reload();
     });
 
@@ -804,6 +947,7 @@
     });
 
     dom["btn-rs-exit"].addEventListener("click", () => {
+      clearStudentSession(); // keluar dari layar hasil → hapus sesi
       window.location.reload();
     });
 
@@ -817,6 +961,7 @@
     });
 
     dom["btn-exit-yes"].addEventListener("click", () => {
+      clearStudentSession(); // keluar sengaja → hapus sesi
       window.location.reload();
     });
 
@@ -1043,6 +1188,9 @@
       window.MultiplayerModule.updateLiveProgress(state.correctCount, state.wrongCount, islandIndex + 1, state.questions.length, false, state.score);
     }
 
+    // Simpan progres sesi murid ke browser agar bisa di-resume jika refresh
+    saveStudentSession();
+
     updateHUD();
 
     setTimeout(() => {
@@ -1114,6 +1262,7 @@
       window.MultiplayerModule.updateLiveProgress(state.correctCount, state.wrongCount, state.questions.length, state.questions.length, true, state.score);
     }
     state.isGameOver = true;
+    clearStudentSession(); // game selesai → hapus sesi
     window.AudioModule.stopBGM();
     window.AudioModule.playGameOverSFX();
     saveToLeaderboardAndShowResult();
@@ -1125,6 +1274,7 @@
     }
     if (state.isLevelComplete) return;
     state.isLevelComplete = true;
+    clearStudentSession(); // level selesai → hapus sesi
     saveToLeaderboardAndShowResult();
   }
 
