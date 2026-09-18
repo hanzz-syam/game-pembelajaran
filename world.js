@@ -322,8 +322,7 @@
   function expandTreeDensityAndVariety(questionIndex) {
     if (!islands || !islands.length) return;
 
-    // Perbaiki Bug Pohon Bertindih
-    const TREE_MIN_DIST = 6.0;   // Jarak aman minimum antar pohon (6 unit)
+    const TREE_MIN_DIST = 8.0;   // Jarak aman minimum antar pohon/bangunan (8 unit)
     const MAX_ATTEMPTS = 30;     // Batas maksimum upaya penempatan per pohon
 
     islands.forEach((island, iIndex) => {
@@ -332,13 +331,13 @@
       const rad = island.userData.radius || ISLAND_RADIUS;
       const GROUND_Y = 0.7;
 
-      // Buat array penampung posisi pohon
-      const spawnPositions = [];
-      
-      // Kumpulkan posisi pohon yang sudah ada di pulau ini dari awal
+      // Array penampung SEMUA posisi objek (pohon & prop) yang sudah ada
+      const usedPositions = [];
+
+      // Kumpulkan posisi semua objek existing di pulau ini
       island.traverse((child) => {
-        if (child.name && child.name.startsWith("Tree_")) {
-          spawnPositions.push({ x: child.position.x, z: child.position.z });
+        if (child.name && (child.name.startsWith("Tree_") || child.name.startsWith("Prop_"))) {
+          usedPositions.push({ x: child.position.x, z: child.position.z });
         }
       });
 
@@ -350,38 +349,36 @@
 
         for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
           const angle = Math.random() * Math.PI * 2;
-          const dist = 2.0 + Math.random() * (rad * 0.55);
+          // Sebarkan ke area PINGGIRAN pulau (55% - 90% radius)
+          const dist = rad * 0.55 + Math.random() * (rad * 0.35);
           tx = Math.cos(angle) * dist;
           tz = Math.sin(angle) * dist;
 
-          // Jangan terlalu dekat pusat pulau
-          if (Math.hypot(tx, tz) < 1.8) continue;
+          // Jangan terlalu dekat pusat pulau (min 3.5 unit)
+          if (Math.hypot(tx, tz) < 3.5) continue;
 
-          // Jangan terlalu dekat tepi pulau
-          if (Math.hypot(tx, tz) > rad * 0.88) continue;
+          // Jangan melewati tepi pulau
+          if (Math.hypot(tx, tz) > rad * 0.92) continue;
 
-          // Periksa jarak terhadap semua pohon yang sudah ada
+          // Periksa jarak terhadap semua posisi yang sudah terpakai
           let tooClose = false;
-          for (const existing of spawnPositions) {
-            if (Math.hypot(tx - existing.x, tz - existing.z) < TREE_MIN_DIST) {
+          for (const used of usedPositions) {
+            if (Math.hypot(tx - used.x, tz - used.z) < TREE_MIN_DIST) {
               tooClose = true;
               break;
             }
           }
 
-          if (tooClose) {
-            console.log(`[World] ⚠️ Pohon di pulau ${iIndex} upaya ${attempt + 1}: posisi (${tx.toFixed(2)}, ${tz.toFixed(2)}) terlalu dekat pohon lain, coba lagi.`);
-            continue;
-          }
+          if (tooClose) continue;
 
-          // Posisi valid — catat dan keluar dari loop percobaan
-          spawnPositions.push({ x: tx, z: tz });
+          // Posisi valid — simpan dan keluar dari loop percobaan
+          usedPositions.push({ x: tx, z: tz });
           placed = true;
           break;
         }
 
         if (!placed) {
-          console.log(`[World] ❌ Pohon ke-${k + 1} di pulau ${iIndex} GAGAL ditempatkan setelah ${MAX_ATTEMPTS} percobaan (pulau terlalu padat).`);
+          console.log(`[World] ❌ Pohon ke-${k + 1} di pulau ${iIndex} GAGAL ditempatkan (pulau padat).`);
           continue;
         }
 
@@ -511,18 +508,13 @@
       rainbowGroup.add(band);
     });
 
-    // Kunci pelangi ke kamera agar 100% selalu terlihat
-    // Posisi lokal relatif terhadap kamera
-    rainbowGroup.position.set(0, 4, -35);
-    rainbowGroup.rotation.x = -Math.PI / 14;
-    rainbowGroup.scale.set(1.4, 1.4, 1.4);
+    // Posisi tetap di koordinat dunia — melengkung di atas latar pulau
+    rainbowGroup.position.set(0, 8, -45);
+    rainbowGroup.rotation.x = -Math.PI / 12;
 
-    // Tambah pelangi ke kamera, lalu pastikan kamera ada di scene
-    camera.add(rainbowGroup);
-    scene.add(camera);
-
+    scene.add(rainbowGroup);
     rainbowMesh = rainbowGroup;
-    console.log('Pelangi dikunci ke kamera!');
+    console.log("Pelangi & Pohon berhasil ditata di Scene!");
     return rainbowGroup;
   }
 

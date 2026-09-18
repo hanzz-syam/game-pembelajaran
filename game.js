@@ -475,13 +475,13 @@
     player.position.set(firstIsland.position.x, firstIsland.position.y + 0.91, firstIsland.position.z);
     scene.add(player);
 
-    // --- Fungsi Membangun Pelangi 3D (dikunci ke kamera) ---
+    // --- Fungsi Membangun Pelangi 3D (objek dunia, radius besar) ---
     function createRainbow() {
       if (typeof THREE === "undefined") return null;
-      
+
       const pelangi = new THREE.Group();
       pelangi.name = "Pelangi3D";
-      
+
       // 5 warna cerah pelangi: merah, kuning, hijau, biru, ungu
       const colors = [
         0xff2020, // Merah
@@ -490,40 +490,36 @@
         0x2288ff, // Biru
         0xaa00ff  // Ungu
       ];
-      
-      const BASE_RADIUS = 18;
-      const BAND_GAP = 2.0;
-      const TUBE_RADIUS = 1.0;
-      
+
+      // Radius besar agar lengkungan terlihat megah di latar belakang
+      const BASE_RADIUS = 35;
+      const BAND_GAP  = 2.0;
+      const TUBE_RADIUS = 2.5;
+
       for (let i = 0; i < colors.length; i++) {
         const radius = BASE_RADIUS - (i * BAND_GAP);
         const geo = new THREE.TorusGeometry(radius, TUBE_RADIUS, 16, 100, Math.PI);
         const mat = new THREE.MeshBasicMaterial({
           color: colors[i],
           transparent: true,
-          opacity: 0.75,
+          opacity: 0.78,
           side: THREE.DoubleSide
         });
-        const band = new THREE.Mesh(geo, mat);
-        pelangi.add(band);
+        pelangi.add(new THREE.Mesh(geo, mat));
       }
-      
-      // Posisi lokal relatif terhadap kamera (bukan scene)
-      pelangi.position.set(0, 4, -35);
-      
-      // Perbesar skala agar melengkung indah dan membentang lebar
-      pelangi.scale.set(1.4, 1.4, 1.4);
-      
-      // Miringkan sedikit ke belakang agar lengkungan terlihat natural
-      pelangi.rotation.x = -Math.PI / 14;
-      
-      // Kunci pelangi ke kamera agar selalu terlihat ke mana pun pemain bergerak
-      camera.add(pelangi);
-      scene.add(camera);
-      console.log('Pelangi dikunci ke kamera!');
+
+      // Posisi tetap di koordinat dunia — melengkung di atas latar pulau
+      pelangi.position.set(0, 8, -45);
+
+      // Miringkan sedikit ke belakang agar busur terlihat natural dari darat
+      pelangi.rotation.x = -Math.PI / 12;
+
+      // Masukkan langsung ke dunia game (bukan ke kamera)
+      scene.add(pelangi);
+      console.log("Pelangi & Pohon berhasil ditata di Scene!");
       return pelangi;
     }
-    
+
     // Panggil langsung saat inisialisasi dunia game
     createRainbow();
 
