@@ -1,83 +1,92 @@
 <!DOCTYPE html>
 <html lang="id">
+
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Petualangan Langit & Kota Impian — Dream Home Edition</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <title>Petualangan Langit & Kota Impian — Dream Home Edition</title>
 
-<!-- Google Fonts: Fredoka & Outfit (Animal Jam Style typography) -->
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <!-- Google Fonts: Fredoka & Outfit (Animal Jam Style typography) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&family=Outfit:wght@400;600;700;800&display=swap"
+    rel="stylesheet">
 
-<!-- Three.js r128 -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<!-- Three.js GLTFLoader r128 — wajib dimuat sebelum modul game -->
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
-<!-- SheetJS (XLSX & CSV Parser) -->
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<!-- PDF.js v3.11.174 (Quiz Parser) -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<!-- PeerJS (WebRTC P2P Multiplayer) -->
-<script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+  <!-- Three.js r128 -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <!-- Three.js GLTFLoader r128 — wajib dimuat sebelum modul game -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+  <!-- SheetJS (XLSX & CSV Parser) -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <!-- PDF.js v3.11.174 (Quiz Parser) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <!-- Firebase SDK (Version Compat untuk Vanilla JS) -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
 
 
-<link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css">
 </head>
+
 <body>
 
-<!-- ==================== LOADING SCREEN ==================== -->
-<div id="loading-screen">
-  <div class="loading-card glass">
-    <div class="loading-icon">🏡</div>
-    <h1>bermain  &amp; Kota Impian</h1>
-    <div class="progress-bar-outer">
-      <div class="progress-bar-inner" id="loading-progress"></div>
-    </div>
-    <p id="loading-text">Menyiapkan pulau langit HD...</p>
-  </div>
-</div>
-
-<!-- ==================== START / ROLE SELECT SCREEN ==================== -->
-<div id="start-screen" class="screen-overlay hidden">
-  <div class="glass start-card role-select-card">
-    <div class="loading-icon">🏡</div>
-    <h1>Petualangan Langit &amp; Kota Impian</h1>
-    <p class="subtitle">Jawab soal dengan benar, kumpulkan koin, dan bangun rumah impianmu!</p>
-    <p class="role-prompt">Pilih peranmu untuk memulai:</p>
-    <div class="role-buttons">
-      <button id="btn-mode-teacher" class="btn-3d btn-purple btn-role">
-        <span class="role-icon">🧑‍🏫</span>
-        <span class="role-label">Saya Guru</span>
-        <span class="role-desc">Upload soal &amp; pantau kelas</span>
-      </button>
-      <button id="btn-mode-student" class="btn-3d btn-blue btn-role">
-        <span class="role-icon">👦</span>
-        <span class="role-label">Saya Murid</span>
-        <span class="role-desc">Langsung main &amp; jawab kuis</span>
-      </button>
+  <!-- ==================== LOADING SCREEN ==================== -->
+  <div id="loading-screen">
+    <div class="loading-card glass">
+      <div class="loading-icon">🏡</div>
+      <h1>bermain &amp; Kota Impian</h1>
+      <div class="progress-bar-outer">
+        <div class="progress-bar-inner" id="loading-progress"></div>
+      </div>
+      <p id="loading-text">Menyiapkan pulau langit HD...</p>
     </div>
   </div>
-</div>
 
-<!-- ==================== TEACHER UPLOAD SCREEN ==================== -->
-<div id="teacher-upload-screen" class="screen-overlay hidden">
-  <div class="glass start-card teacher-upload-card">
-    <div class="loading-icon">📚</div>
-    <h1>Upload Soal Kuis</h1>
-    <p class="subtitle">Guru wajib mengunggah file soal terlebih dahulu sebelum memulai game.</p>
-
-    <div class="pdf-upload-box glass-inner">
-      <label for="teacher-upload-input">📁 Unggah File Soal (JSON / CSV / Excel / PDF / TXT)</label>
-      <input type="file" id="teacher-upload-input" accept=".json,.csv,.xlsx,.xls,.pdf,.txt,application/json,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,application/pdf,text/plain">
-      <p id="teacher-upload-status" class="pdf-status" style="color: #64748b;">Belum ada file soal yang dipilih</p>
+  <!-- ==================== START / ROLE SELECT SCREEN ==================== -->
+  <div id="start-screen" class="screen-overlay hidden">
+    <div class="glass start-card role-select-card">
+      <div class="loading-icon">🏡</div>
+      <h1>Petualangan Langit &amp; Kota Impian</h1>
+      <p class="subtitle">Jawab soal dengan benar, kumpulkan koin, dan bangun rumah impianmu!</p>
+      <p class="role-prompt">Pilih peranmu untuk memulai:</p>
+      <div class="role-buttons">
+        <button id="btn-mode-teacher" class="btn-3d btn-purple btn-role">
+          <span class="role-icon">🧑‍🏫</span>
+          <span class="role-label">Saya Guru</span>
+          <span class="role-desc">Upload soal &amp; pantau kelas</span>
+        </button>
+        <button id="btn-mode-student" class="btn-3d btn-blue btn-role">
+          <span class="role-icon">👦</span>
+          <span class="role-label">Saya Murid</span>
+          <span class="role-desc">Langsung main &amp; jawab kuis</span>
+        </button>
+      </div>
     </div>
+  </div>
 
-    <div class="paste-divider"><span>ATAU</span></div>
+  <!-- ==================== TEACHER UPLOAD SCREEN ==================== -->
+  <div id="teacher-upload-screen" class="screen-overlay hidden">
+    <div class="glass start-card teacher-upload-card">
+      <div class="loading-icon">📚</div>
+      <h1>Upload Soal Kuis</h1>
+      <p class="subtitle">Guru wajib mengunggah file soal terlebih dahulu sebelum memulai game.</p>
 
-    <div class="paste-text-box glass-inner">
-      <label for="teacher-paste-textarea">📋 Tempel / Copy-Paste Teks Soal Di Sini</label>
-      <textarea id="teacher-paste-textarea" rows="8" placeholder="Contoh format:
+      <div class="pdf-upload-box glass-inner">
+        <label for="teacher-upload-input">📁 Unggah File Soal (JSON / CSV / Excel / PDF / TXT)</label>
+        <input type="file" id="teacher-upload-input"
+          accept=".json,.csv,.xlsx,.xls,.pdf,.txt,application/json,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,application/pdf,text/plain">
+        <p id="teacher-upload-status" class="pdf-status" style="color: #64748b;">Belum ada file soal yang dipilih</p>
+      </div>
+
+      <div class="paste-divider"><span>ATAU</span></div>
+
+      <div class="paste-text-box glass-inner">
+        <label for="teacher-paste-textarea">📋 Tempel / Copy-Paste Teks Soal Di Sini</label>
+        <textarea id="teacher-paste-textarea" rows="8" placeholder="Contoh format:
 1. Apa rukun Islam yang pertama?
 A. Shalat
 B. Puasa
@@ -91,237 +100,242 @@ B. 3
 C. 4
 D. 5
 Kunci: B"></textarea>
-      <button id="btn-process-paste" class="btn-3d btn-blue btn-small">📝 Proses Teks Soal</button>
-      <p id="teacher-paste-status" class="pdf-status" style="color: #64748b;"></p>
-    </div>
-
-    <div id="teacher-upload-summary" class="upload-summary hidden">
-      <span id="teacher-upload-count">0</span>
-    </div>
-
-    <div id="teacher-preview-section" class="preview-section hidden">
-      <h3 class="preview-title">📝 Preview & Edit Kunci Jawaban</h3>
-      <p class="preview-subtitle">Pilih tombol A/B/C/D di setiap soal untuk menentukan kunci yang benar:</p>
-      <div id="teacher-preview-list" class="preview-list"></div>
-    </div>
-
-    <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
-      <button id="btn-teacher-start" class="btn-3d btn-green btn-large" disabled>🚀 Mulai Game / Buat Kode</button>
-      <button id="btn-teacher-upload-back" class="btn-3d btn-red btn-small">⬅ Kembali</button>
-    </div>
-  </div>
-</div>
-
-<!-- ==================== TEACHER LOBBY SCREEN ==================== -->
-<div id="teacher-screen" class="screen-overlay hidden">
-  <div class="glass teacher-card" style="max-width: 800px;">
-    <h2>🧑‍🏫 Pantau Progress Murid</h2>
-    <div class="pin-display">
-      <span>PIN Kelas:</span>
-      <span id="teacher-pin" class="pin-code">------</span>
-    </div>
-    
-    <div class="live-summary">
-      <div class="summary-box">
-        <h4>Total Murid</h4>
-        <span id="lm-total">0</span>
+        <button id="btn-process-paste" class="btn-3d btn-blue btn-small">📝 Proses Teks Soal</button>
+        <p id="teacher-paste-status" class="pdf-status" style="color: #64748b;"></p>
       </div>
-      <div class="summary-box">
-        <h4>Selesai</h4>
-        <span id="lm-done" style="color: var(--aj-green-dark);">0</span>
+
+      <div id="teacher-upload-summary" class="upload-summary hidden">
+        <span id="teacher-upload-count">0</span>
       </div>
-      <div class="summary-box">
-        <h4>Mengerjakan</h4>
-        <span id="lm-progress" style="color: var(--aj-orange-dark);">0</span>
+
+      <div id="teacher-preview-section" class="preview-section hidden">
+        <h3 class="preview-title">📝 Preview & Edit Kunci Jawaban</h3>
+        <p class="preview-subtitle">Pilih tombol A/B/C/D di setiap soal untuk menentukan kunci yang benar:</p>
+        <div id="teacher-preview-list" class="preview-list"></div>
       </div>
-    </div>
 
-    <div style="display: flex; gap: 8px; justify-content: center; margin-bottom: 12px; flex-wrap: wrap;">
-      <button id="btn-new-pin" class="btn-3d btn-blue btn-small">🔄 Buat PIN Baru</button>
-      <button id="btn-clear-leaderboard" class="btn-3d btn-red btn-small">🗑️ Hapus Riwayat</button>
-    </div>
-    
-    <div class="table-container">
-      <table class="result-leaderboard-table live-table">
-        <thead>
-          <tr>
-            <th>Peringkat</th>
-            <th>Nama Murid</th>
-            <th>Progress Soal</th>
-            <th>Benar / Salah</th>
-            <th>Status</th>
-            <th>Total Poin</th>
-          </tr>
-        </thead>
-        <tbody id="leaderboard-list">
-          <tr><td colspan="6" class="empty-note">Menunggu murid bergabung...</td></tr>
-        </tbody>
-      </table>
-    </div>
-
-    <button id="btn-teacher-back" class="btn-3d btn-red btn-small">⬅ Kembali</button>
-  </div>
-</div>
-
-<!-- ==================== STUDENT JOIN SCREEN ==================== -->
-<div id="join-screen" class="screen-overlay hidden">
-  <div class="glass join-card">
-    <h2>👦 Gabung Kelas</h2>
-    <input type="text" id="student-name" placeholder="Nama kamu" maxlength="16" class="text-input">
-    <input type="text" id="student-pin" placeholder="Masukkan PIN Kelas (opsional)" maxlength="6" class="text-input">
-    <button id="btn-join-class" class="btn-3d btn-green">✅ Gabung &amp; Mulai</button>
-    <button id="btn-join-back" class="btn-3d btn-red btn-small">⬅ Kembali</button>
-  </div>
-</div>
-
-<!-- ==================== GAME CANVAS CONTAINER ==================== -->
-<div id="game-container" class="hidden">
-  <canvas id="game-canvas"></canvas>
-
-  <!-- ---------- HUD TOP ---------- -->
-  <div id="hud-top" class="hud-layer">
-    <div class="hud-panel glass health-panel">
-      <span class="hud-icon">❤️</span>
-      <div class="health-bar-outer">
-        <div class="health-bar-inner" id="health-bar-inner"></div>
-        <span class="health-text" id="health-text">100/100</span>
-      </div>
-    </div>
-
-    <div class="hud-panel glass score-panel">
-      <div class="score-item">⭐ <span id="score-value">0</span></div>
-      <div class="score-item">🪙 <span id="coin-value">0</span></div>
-    </div>
-
-    <div class="hud-panel glass icon-panel">
-      <button id="btn-mute" class="icon-btn" title="Mute/Unmute">🔊</button>
-      <button id="btn-shop" class="icon-btn" title="Toko Dekorasi">🏪</button>
-      <button id="btn-multiplayer" class="icon-btn" title="Papan Peringkat">🏆</button>
-      <button id="btn-exit" class="icon-btn btn-exit-icon" title="Keluar">🚪</button>
-    </div>
-  </div>
-
-  <!-- ---------- STAR BURST EFFECT LAYER ---------- -->
-  <div id="effect-layer"></div>
-
-  <!-- ---------- QUESTION PANEL ---------- -->
-  <div id="question-panel" class="glass question-panel hidden">
-    <div class="question-progress" id="question-progress">Soal 1/5</div>
-    <p id="question-text" class="question-text">Pertanyaan...</p>
-    <div id="answer-options" class="answer-options"></div>
-  </div>
-
-  <!-- ---------- FEEDBACK TOAST ---------- -->
-  <div id="feedback-toast" class="feedback-toast hidden"></div>
-
-  <!-- ---------- MOBILE D-PAD ---------- -->
-  <div id="dpad" class="dpad">
-    <button class="dpad-btn dpad-up" data-dir="up">▲</button>
-    <button class="dpad-btn dpad-left" data-dir="left">◀</button>
-    <button class="dpad-btn dpad-down" data-dir="down">▼</button>
-    <button class="dpad-btn dpad-right" data-dir="right">▶</button>
-  </div>
-  <button id="btn-jump" class="jump-btn">⬆ LOMPAT</button>
-
-  <!-- ---------- SHOP MODAL ---------- -->
-  <div id="shop-modal" class="modal-overlay hidden">
-    <div class="glass modal-card shop-card">
-      <h2>🏪 Toko Dekorasi Rumah Impian</h2>
-      <p class="shop-coins">Koin kamu: <span id="shop-coin-value">0</span> 🪙</p>
-      <div id="shop-items" class="shop-items"></div>
-      <button id="btn-close-shop" class="btn-3d btn-red btn-small">Tutup</button>
-    </div>
-  </div>
-
-  <!-- ---------- EXIT CONFIRM MODAL ---------- -->
-  <div id="exit-confirm-modal" class="modal-overlay hidden">
-    <div class="glass modal-card">
-      <h2>🚪 Konfirmasi Keluar</h2>
-      <p style="margin-bottom: 20px; font-weight: 600; color: #1e3054;">Apakah kamu yakin ingin keluar ke Menu Utama?</p>
       <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
-        <button id="btn-exit-yes" class="btn-3d btn-red">Ya, Keluar</button>
-        <button id="btn-exit-no" class="btn-3d btn-blue">Batal</button>
+        <button id="btn-teacher-start" class="btn-3d btn-green btn-large" disabled>🚀 Mulai Game / Buat Kode</button>
+        <button id="btn-teacher-upload-back" class="btn-3d btn-red btn-small">⬅ Kembali</button>
       </div>
     </div>
   </div>
 
-  <!-- ---------- LEADERBOARD MODAL ---------- -->
-  <div id="leaderboard-modal" class="modal-overlay hidden">
-    <div class="glass modal-card">
-      <h2>🏆 Papan Peringkat Kelas</h2>
-      <div id="lb-modal-list" class="leaderboard-list"></div>
-      <div style="display: flex; gap: 8px; justify-content: center; margin-top: 10px; flex-wrap: wrap;">
-        <button id="btn-clear-lb-modal" class="btn-3d btn-red btn-small">🗑️ Hapus Riwayat</button>
-        <button id="btn-close-lb" class="btn-3d btn-blue btn-small">Tutup</button>
+  <!-- ==================== TEACHER LOBBY SCREEN ==================== -->
+  <div id="teacher-screen" class="screen-overlay hidden">
+    <div class="glass teacher-card" style="max-width: 800px;">
+      <h2>🧑‍🏫 Pantau Progress Murid</h2>
+      <div class="pin-display">
+        <span>PIN Kelas:</span>
+        <span id="teacher-pin" class="pin-code">------</span>
+      </div>
+
+      <div class="live-summary">
+        <div class="summary-box">
+          <h4>Total Murid</h4>
+          <span id="lm-total">0</span>
+        </div>
+        <div class="summary-box">
+          <h4>Selesai</h4>
+          <span id="lm-done" style="color: var(--aj-green-dark);">0</span>
+        </div>
+        <div class="summary-box">
+          <h4>Mengerjakan</h4>
+          <span id="lm-progress" style="color: var(--aj-orange-dark);">0</span>
+        </div>
+      </div>
+
+      <div style="display: flex; gap: 8px; justify-content: center; margin-bottom: 12px; flex-wrap: wrap;">
+        <button id="btn-new-pin" class="btn-3d btn-blue btn-small">🔄 Buat PIN Baru</button>
+        <button id="btn-clear-leaderboard" class="btn-3d btn-red btn-small">🗑️ Hapus Riwayat</button>
+      </div>
+
+      <div class="table-container">
+        <table class="result-leaderboard-table live-table">
+          <thead>
+            <tr>
+              <th>Peringkat</th>
+              <th>Nama Murid</th>
+              <th>Progress Soal</th>
+              <th>Benar / Salah</th>
+              <th>Status</th>
+              <th>Total Poin</th>
+            </tr>
+          </thead>
+          <tbody id="leaderboard-list">
+            <tr>
+              <td colspan="6" class="empty-note">Menunggu murid bergabung...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <button id="btn-teacher-back" class="btn-3d btn-red btn-small">⬅ Kembali</button>
+    </div>
+  </div>
+
+  <!-- ==================== STUDENT JOIN SCREEN ==================== -->
+  <div id="join-screen" class="screen-overlay hidden">
+    <div class="glass join-card">
+      <h2>👦 Gabung Kelas</h2>
+      <input type="text" id="student-name" placeholder="Nama kamu" maxlength="16" class="text-input">
+      <input type="text" id="student-pin" placeholder="Masukkan PIN Kelas (opsional)" maxlength="6" class="text-input">
+      <button id="btn-join-class" class="btn-3d btn-green">✅ Gabung &amp; Mulai</button>
+      <button id="btn-join-back" class="btn-3d btn-red btn-small">⬅ Kembali</button>
+    </div>
+  </div>
+
+  <!-- ==================== GAME CANVAS CONTAINER ==================== -->
+  <div id="game-container" class="hidden">
+    <canvas id="game-canvas"></canvas>
+
+    <!-- ---------- HUD TOP ---------- -->
+    <div id="hud-top" class="hud-layer">
+      <div class="hud-panel glass health-panel">
+        <span class="hud-icon">❤️</span>
+        <div class="health-bar-outer">
+          <div class="health-bar-inner" id="health-bar-inner"></div>
+          <span class="health-text" id="health-text">100/100</span>
+        </div>
+      </div>
+
+      <div class="hud-panel glass score-panel">
+        <div class="score-item">⭐ <span id="score-value">0</span></div>
+        <div class="score-item">🪙 <span id="coin-value">0</span></div>
+      </div>
+
+      <div class="hud-panel glass icon-panel">
+        <button id="btn-mute" class="icon-btn" title="Mute/Unmute">🔊</button>
+        <button id="btn-shop" class="icon-btn" title="Toko Dekorasi">🏪</button>
+        <button id="btn-multiplayer" class="icon-btn" title="Papan Peringkat">🏆</button>
+        <button id="btn-exit" class="icon-btn btn-exit-icon" title="Keluar">🚪</button>
+      </div>
+    </div>
+
+    <!-- ---------- STAR BURST EFFECT LAYER ---------- -->
+    <div id="effect-layer"></div>
+
+    <!-- ---------- QUESTION PANEL ---------- -->
+    <div id="question-panel" class="glass question-panel hidden">
+      <div class="question-progress" id="question-progress">Soal 1/5</div>
+      <p id="question-text" class="question-text">Pertanyaan...</p>
+      <div id="answer-options" class="answer-options"></div>
+    </div>
+
+    <!-- ---------- FEEDBACK TOAST ---------- -->
+    <div id="feedback-toast" class="feedback-toast hidden"></div>
+
+    <!-- ---------- MOBILE D-PAD ---------- -->
+    <div id="dpad" class="dpad">
+      <button class="dpad-btn dpad-up" data-dir="up">▲</button>
+      <button class="dpad-btn dpad-left" data-dir="left">◀</button>
+      <button class="dpad-btn dpad-down" data-dir="down">▼</button>
+      <button class="dpad-btn dpad-right" data-dir="right">▶</button>
+    </div>
+    <button id="btn-jump" class="jump-btn">⬆ LOMPAT</button>
+
+    <!-- ---------- SHOP MODAL ---------- -->
+    <div id="shop-modal" class="modal-overlay hidden">
+      <div class="glass modal-card shop-card">
+        <h2>🏪 Toko Dekorasi Rumah Impian</h2>
+        <p class="shop-coins">Koin kamu: <span id="shop-coin-value">0</span> 🪙</p>
+        <div id="shop-items" class="shop-items"></div>
+        <button id="btn-close-shop" class="btn-3d btn-red btn-small">Tutup</button>
+      </div>
+    </div>
+
+    <!-- ---------- EXIT CONFIRM MODAL ---------- -->
+    <div id="exit-confirm-modal" class="modal-overlay hidden">
+      <div class="glass modal-card">
+        <h2>🚪 Konfirmasi Keluar</h2>
+        <p style="margin-bottom: 20px; font-weight: 600; color: #1e3054;">Apakah kamu yakin ingin keluar ke Menu Utama?
+        </p>
+        <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+          <button id="btn-exit-yes" class="btn-3d btn-red">Ya, Keluar</button>
+          <button id="btn-exit-no" class="btn-3d btn-blue">Batal</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ---------- LEADERBOARD MODAL ---------- -->
+    <div id="leaderboard-modal" class="modal-overlay hidden">
+      <div class="glass modal-card">
+        <h2>🏆 Papan Peringkat Kelas</h2>
+        <div id="lb-modal-list" class="leaderboard-list"></div>
+        <div style="display: flex; gap: 8px; justify-content: center; margin-top: 10px; flex-wrap: wrap;">
+          <button id="btn-clear-lb-modal" class="btn-3d btn-red btn-small">🗑️ Hapus Riwayat</button>
+          <button id="btn-close-lb" class="btn-3d btn-blue btn-small">Tutup</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ---------- GAME OVER MODAL ---------- -->
+    <div id="gameover-modal" class="modal-overlay hidden">
+      <div class="glass modal-card gameover-card">
+        <h2>💔 Permainan Berakhir</h2>
+        <p>Skor Akhir: <span id="final-score">0</span></p>
+        <p>Koin Terkumpul: <span id="final-coin">0</span></p>
+        <button id="btn-restart" class="btn-3d btn-green">🔄 Main Lagi</button>
+      </div>
+    </div>
+
+    <!-- ---------- LEVEL COMPLETE MODAL ---------- -->
+    <div id="levelcomplete-modal" class="modal-overlay hidden">
+      <div class="glass modal-card">
+        <h2>🎉 Selamat! Kota Impianmu Selesai!</h2>
+        <p>Kamu berhasil menyelesaikan semua pulau langit! Kini waktunya membangun rumah impianmu! 🏡</p>
+        <p>Skor Akhir: <span id="lc-final-score">0</span></p>
+        <p>Koin Terkumpul: <span id="lc-final-coin">0</span></p>
+        <button id="btn-goto-town" class="btn-3d btn-blue">🏡 Bangun Rumah Impian</button>
+      </div>
+    </div>
+
+    <!-- ---------- RESULT SCREEN MODAL (QUIZIZZ STYLE) ---------- -->
+    <div id="result-screen-modal" class="modal-overlay hidden">
+      <div class="glass modal-card result-card">
+        <h2>🎉 Hasil Akhir Kuis 🎉</h2>
+        <div class="player-result-info">
+          <p>Nama: <span id="rs-player-name">-</span></p>
+          <p>Skor Kamu: <span id="rs-player-score">0</span></p>
+          <p>Peringkat Kamu: <span id="rs-player-rank">#0 dari 0 pemain</span></p>
+        </div>
+
+        <h3>🏆 Papan Peringkat (Top 5)</h3>
+        <table class="result-leaderboard-table">
+          <thead>
+            <tr>
+              <th>Peringkat</th>
+              <th>Nama Pemain</th>
+              <th>Total Poin</th>
+            </tr>
+          </thead>
+          <tbody id="rs-leaderboard-body">
+            <!-- Rows injected via JS -->
+          </tbody>
+        </table>
+
+        <div style="display: flex; gap: 10px; justify-content: center; margin-top: 15px; flex-wrap: wrap;">
+          <button id="btn-rs-town" class="btn-3d btn-blue">🏡 Bangun Rumah</button>
+          <button id="btn-rs-exit" class="btn-3d btn-red">🚪 Keluar ke Menu Utama</button>
+        </div>
       </div>
     </div>
   </div>
 
-  <!-- ---------- GAME OVER MODAL ---------- -->
-  <div id="gameover-modal" class="modal-overlay hidden">
-    <div class="glass modal-card gameover-card">
-      <h2>💔 Permainan Berakhir</h2>
-      <p>Skor Akhir: <span id="final-score">0</span></p>
-      <p>Koin Terkumpul: <span id="final-coin">0</span></p>
-      <button id="btn-restart" class="btn-3d btn-green">🔄 Main Lagi</button>
-    </div>
-  </div>
-
-  <!-- ---------- LEVEL COMPLETE MODAL ---------- -->
-  <div id="levelcomplete-modal" class="modal-overlay hidden">
-    <div class="glass modal-card">
-      <h2>🎉 Selamat! Kota Impianmu Selesai!</h2>
-      <p>Kamu berhasil menyelesaikan semua pulau langit! Kini waktunya membangun rumah impianmu! 🏡</p>
-      <p>Skor Akhir: <span id="lc-final-score">0</span></p>
-      <p>Koin Terkumpul: <span id="lc-final-coin">0</span></p>
-      <button id="btn-goto-town" class="btn-3d btn-blue">🏡 Bangun Rumah Impian</button>
-    </div>
-  </div>
-
-  <!-- ---------- RESULT SCREEN MODAL (QUIZIZZ STYLE) ---------- -->
-  <div id="result-screen-modal" class="modal-overlay hidden">
-    <div class="glass modal-card result-card">
-      <h2>🎉 Hasil Akhir Kuis 🎉</h2>
-      <div class="player-result-info">
-        <p>Nama: <span id="rs-player-name">-</span></p>
-        <p>Skor Kamu: <span id="rs-player-score">0</span></p>
-        <p>Peringkat Kamu: <span id="rs-player-rank">#0 dari 0 pemain</span></p>
-      </div>
-      
-      <h3>🏆 Papan Peringkat (Top 5)</h3>
-      <table class="result-leaderboard-table">
-        <thead>
-          <tr>
-            <th>Peringkat</th>
-            <th>Nama Pemain</th>
-            <th>Total Poin</th>
-          </tr>
-        </thead>
-        <tbody id="rs-leaderboard-body">
-          <!-- Rows injected via JS -->
-        </tbody>
-      </table>
-
-      <div style="display: flex; gap: 10px; justify-content: center; margin-top: 15px; flex-wrap: wrap;">
-        <button id="btn-rs-town" class="btn-3d btn-blue">🏡 Bangun Rumah</button>
-        <button id="btn-rs-exit" class="btn-3d btn-red">🚪 Keluar ke Menu Utama</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- ==================== SCRIPT LOAD ORDER (WAJIB) ==================== -->
-<script src="questions.js"></script>
-<script src="pdf-parser.js"></script>
-<script src="audio.js"></script>
-<script src="physics.js"></script>
-<script src="npc.js"></script>
-<script src="world.js"></script>
-<script src="player.js"></script>
-<script src="townBuilder.js"></script>
-<script src="multiplayer.js"></script>
-<!-- Modul pemuatan & penempatan semua model GLB langsung dari folder models/ (tanpa Base64) -->
-<script src="model_loader.js"></script>
-<script src="game.js"></script>
+  <!-- ==================== SCRIPT LOAD ORDER (WAJIB) ==================== -->
+  <script src="firebase-config.js?v=3.0"></script>
+  <script src="questions.js?v=2.0"></script>
+  <script src="pdf-parser.js?v=2.0"></script>
+  <script src="audio.js?v=2.0"></script>
+  <script src="physics.js?v=2.0"></script>
+  <script src="npc.js?v=2.0"></script>
+  <script src="world.js?v=2.0"></script>
+  <script src="player.js?v=2.0"></script>
+  <script src="townBuilder.js?v=2.0"></script>
+  <script src="multiplayer.js?v=2.0"></script>
+  <!-- Modul pemuatan & penempatan semua model GLB langsung dari folder models/ (tanpa Base64) -->
+  <script src="model_loader.js?v=2.0"></script>
+  <script src="game.js?v=2.0"></script>
 </body>
+
 </html>
