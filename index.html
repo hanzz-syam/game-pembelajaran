@@ -111,20 +111,51 @@ Kunci: B"></textarea>
 
 <!-- ==================== TEACHER LOBBY SCREEN ==================== -->
 <div id="teacher-screen" class="screen-overlay hidden">
-  <div class="glass teacher-card">
-    <h2>🧑‍🏫 Dasbor Guru</h2>
+  <div class="glass teacher-card" style="max-width: 800px;">
+    <h2>🧑‍🏫 Pantau Progress Murid</h2>
     <div class="pin-display">
       <span>PIN Kelas:</span>
       <span id="teacher-pin" class="pin-code">------</span>
     </div>
+    
+    <div class="live-summary">
+      <div class="summary-box">
+        <h4>Total Murid</h4>
+        <span id="lm-total">0</span>
+      </div>
+      <div class="summary-box">
+        <h4>Selesai</h4>
+        <span id="lm-done" style="color: var(--aj-green-dark);">0</span>
+      </div>
+      <div class="summary-box">
+        <h4>Mengerjakan</h4>
+        <span id="lm-progress" style="color: var(--aj-orange-dark);">0</span>
+      </div>
+    </div>
+
     <div style="display: flex; gap: 8px; justify-content: center; margin-bottom: 12px; flex-wrap: wrap;">
       <button id="btn-new-pin" class="btn-3d btn-blue btn-small">🔄 Buat PIN Baru</button>
       <button id="btn-clear-leaderboard" class="btn-3d btn-red btn-small">🗑️ Hapus Riwayat</button>
     </div>
-    <h3>📊 Papan Peringkat</h3>
-    <div id="leaderboard-list" class="leaderboard-list">
-      <p class="empty-note">Menunggu murid bergabung...</p>
+    
+    <div class="table-container">
+      <table class="result-leaderboard-table live-table">
+        <thead>
+          <tr>
+            <th>Peringkat</th>
+            <th>Nama Murid</th>
+            <th>Progress Soal</th>
+            <th>Benar / Salah</th>
+            <th>Status</th>
+            <th>Total Poin</th>
+          </tr>
+        </thead>
+        <tbody id="leaderboard-list">
+          <tr><td colspan="6" class="empty-note">Menunggu murid bergabung...</td></tr>
+        </tbody>
+      </table>
     </div>
+
     <button id="btn-teacher-back" class="btn-3d btn-red btn-small">⬅ Kembali</button>
   </div>
 </div>

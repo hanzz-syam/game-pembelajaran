@@ -24,7 +24,9 @@
     moveSpeed: 6,
     velocityY: 0,
     isGrounded: true,
-    playerRotationY: 0
+    playerRotationY: 0,
+    correctCount: 0,
+    wrongCount: 0
   };
 
   let player = null;
@@ -56,7 +58,8 @@
       "levelcomplete-modal", "lc-final-score", "lc-final-coin", "btn-goto-town",
       "result-screen-modal", "rs-player-name", "rs-player-score", "rs-player-rank", 
       "rs-leaderboard-body", "btn-rs-town", "btn-rs-exit",
-      "btn-exit", "exit-confirm-modal", "btn-exit-yes", "btn-exit-no"
+      "btn-exit", "exit-confirm-modal", "btn-exit-yes", "btn-exit-no",
+      "lm-total", "lm-done", "lm-progress"
     ];
     ids.forEach((id) => (dom[id] = document.getElementById(id)));
   }
@@ -409,6 +412,9 @@
       dom["btn-clear-leaderboard"].addEventListener("click", () => {
         if (confirm("Apakah Anda yakin ingin menghapus semua riwayat pemain & papan peringkat?")) {
           window.MultiplayerModule.resetLeaderboard();
+          if (typeof window.MultiplayerModule.clearLiveMonitor === "function") {
+            window.MultiplayerModule.clearLiveMonitor();
+          }
           renderLeaderboard(dom["leaderboard-list"]);
         }
       });
@@ -441,16 +447,42 @@
 
   function renderLeaderboard(container) {
     if (!container) return;
-    const lb = window.MultiplayerModule.getLeaderboard();
-    if (!lb.length) {
-      container.innerHTML = '<p class="empty-note">Belum ada riwayat pemain. Silakan gabung dan mulai bermain!</p>';
-      return;
+    
+    if (window.MultiplayerModule && typeof window.MultiplayerModule.getLiveMonitorList === "function") {
+      const lb = window.MultiplayerModule.getLiveMonitorList();
+      if (!lb.length) {
+        container.innerHTML = '<tr><td colspan="6" class="empty-note">Belum ada data progress murid.</td></tr>';
+        if (dom["lm-total"]) dom["lm-total"].textContent = "0";
+        if (dom["lm-done"]) dom["lm-done"].textContent = "0";
+        if (dom["lm-progress"]) dom["lm-progress"].textContent = "0";
+        return;
+      }
+      
+      let doneCount = 0;
+      let progressCount = 0;
+
+      container.innerHTML = lb
+        .map((s, i) => {
+          if (s.status === "Selesai") doneCount++;
+          else progressCount++;
+          
+          const statusClass = s.status === "Selesai" ? "selesai" : "mengerjakan";
+          
+          return `<tr>
+            <td>#${i + 1}</td>
+            <td>${escapeHtml(s.name)}</td>
+            <td>Soal ${s.currentQuestion || 0} / ${s.totalQuestions || 0}</td>
+            <td>✅ ${s.correct || 0} | ❌ ${s.wrong || 0}</td>
+            <td><span class="status-badge ${statusClass}">${s.status}</span></td>
+            <td>${s.score}</td>
+          </tr>`;
+        })
+        .join("");
+        
+      if (dom["lm-total"]) dom["lm-total"].textContent = lb.length;
+      if (dom["lm-done"]) dom["lm-done"].textContent = doneCount;
+      if (dom["lm-progress"]) dom["lm-progress"].textContent = progressCount;
     }
-    container.innerHTML = lb
-      .map((s, i) => {
-        return `<div class="leaderboard-row"><span><span class="rank">#${i + 1}</span>${escapeHtml(s.name)}</span><span>⭐ ${s.score} · 🪙 ${s.coins}</span></div>`;
-      })
-      .join("");
   }
 
   function escapeHtml(str) {
@@ -494,10 +526,10 @@
         0xaa00ff  // Ungu
       ];
 
-      // Radius besar agar lengkungan terlihat megah di latar belakang
-      const BASE_RADIUS = 35;
-      const BAND_GAP  = 2.0;
-      const TUBE_RADIUS = 2.5;
+      // Radius diperkecil agar lengkungan pas di tengah langit
+      const BASE_RADIUS = 18;
+      const BAND_GAP  = 1.5;
+      const TUBE_RADIUS = 1.5;
 
       for (let i = 0; i < colors.length; i++) {
         const radius = BASE_RADIUS - (i * BAND_GAP);
@@ -511,15 +543,47 @@
         pelangi.add(new THREE.Mesh(geo, mat));
       }
 
-      // Posisi tetap di koordinat dunia — melengkung di atas latar pulau
-      pelangi.position.set(0, 8, -45);
+      // Posisi lebih rendah dan mundur
+      pelangi.position.set(0, -2, -50);
 
       // Miringkan sedikit ke belakang agar busur terlihat natural dari darat
       pelangi.rotation.x = -Math.PI / 12;
 
       // Masukkan langsung ke dunia game (bukan ke kamera)
       scene.add(pelangi);
-      console.log("Pelangi & Pohon berhasil ditata di Scene!");
+
+      // --- Tambahkan Awan di Kaki Pelangi ---
+      function buildCloudCluster() {
+        const cloudGroup = new THREE.Group();
+        const cloudGeo = new THREE.SphereGeometry(3.5, 16, 16);
+        const cloudMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95 });
+        
+        const c1 = new THREE.Mesh(cloudGeo, cloudMat);
+        c1.position.set(0, 0, 0);
+        const c2 = new THREE.Mesh(cloudGeo, cloudMat);
+        c2.position.set(-2.5, -1, 1);
+        c2.scale.set(0.8, 0.8, 0.8);
+        const c3 = new THREE.Mesh(cloudGeo, cloudMat);
+        c3.position.set(2.5, -1.5, -1);
+        c3.scale.set(0.9, 0.9, 0.9);
+        const c4 = new THREE.Mesh(cloudGeo, cloudMat);
+        c4.position.set(0, 1.5, -1.5);
+        c4.scale.set(0.7, 0.7, 0.7);
+
+        cloudGroup.add(c1, c2, c3, c4);
+        return cloudGroup;
+      }
+
+      // Posisikan awan di ujung kiri dan kanan bawah pelangi
+      const leftCloud = buildCloudCluster();
+      leftCloud.position.set(-18, -2, -49);
+      scene.add(leftCloud);
+
+      const rightCloud = buildCloudCluster();
+      rightCloud.position.set(18, -2, -49);
+      scene.add(rightCloud);
+
+      console.log("Pelangi & Awan Kaki berhasil ditata di Scene!");
       return pelangi;
     }
 
@@ -618,6 +682,9 @@
         }
         if (confirm("Apakah Anda yakin ingin menghapus semua riwayat pemain & papan peringkat?")) {
           window.MultiplayerModule.resetLeaderboard();
+          if (typeof window.MultiplayerModule.clearLiveMonitor === "function") {
+            window.MultiplayerModule.clearLiveMonitor();
+          }
           renderLeaderboard(dom["lb-modal-list"]);
         }
       });
@@ -840,6 +907,7 @@
     console.log("Index tombol diklik:", chosenIdx, "| Kunci Index Sistem:", kunciIndex, "| Hasil:", isCorrect ? "BENAR" : "SALAH");
 
     if (isCorrect) {
+      state.correctCount++;
       btnEl.classList.add("correct");
       state.score += 100;
       state.coins += 20;
@@ -857,6 +925,7 @@
       }
       state.answeredIslands.add(islandIndex);
     } else {
+      state.wrongCount++;
       btnEl.classList.add("wrong");
       // Highlight tombol kunci jawaban jika salah
       if (typeof kunciIndex === "number" && allBtns[kunciIndex]) {
@@ -866,6 +935,10 @@
       window.AudioModule.playDamageSFX();
       triggerScreenShake();
       showFeedback("❌ Kurang tepat! -20 HP", "wrong");
+    }
+
+    if (window.MultiplayerModule && typeof window.MultiplayerModule.updateLiveProgress === "function") {
+      window.MultiplayerModule.updateLiveProgress(state.correctCount, state.wrongCount, islandIndex + 1, state.questions.length, false, state.score);
     }
 
     updateHUD();
@@ -935,6 +1008,9 @@
   }
 
   function triggerGameOver() {
+    if (window.MultiplayerModule && typeof window.MultiplayerModule.updateLiveProgress === "function") {
+      window.MultiplayerModule.updateLiveProgress(state.correctCount, state.wrongCount, state.questions.length, state.questions.length, true, state.score);
+    }
     state.isGameOver = true;
     window.AudioModule.stopBGM();
     window.AudioModule.playGameOverSFX();
@@ -942,6 +1018,9 @@
   }
 
   function triggerLevelComplete() {
+    if (window.MultiplayerModule && typeof window.MultiplayerModule.updateLiveProgress === "function") {
+      window.MultiplayerModule.updateLiveProgress(state.correctCount, state.wrongCount, state.questions.length, state.questions.length, true, state.score);
+    }
     if (state.isLevelComplete) return;
     state.isLevelComplete = true;
     saveToLeaderboardAndShowResult();

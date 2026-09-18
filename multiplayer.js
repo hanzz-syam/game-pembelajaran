@@ -35,7 +35,7 @@
       };
     }
     window.addEventListener("storage", (e) => {
-      if (e.key === STORAGE_KEY) notifyLeaderboardUpdate();
+      if (e.key === STORAGE_KEY || e.key === "GAME_LIVE_MONITOR") notifyLeaderboardUpdate();
     });
   }
 
@@ -145,6 +145,50 @@
     }
   }
 
+  // -------------------- Live Monitor --------------------
+  const LIVE_MONITOR_KEY = "GAME_LIVE_MONITOR";
+
+  function readLiveMonitorData() {
+    try {
+      const raw = localStorage.getItem(LIVE_MONITOR_KEY);
+      return raw ? JSON.parse(raw) : {};
+    } catch(e) {
+      return {};
+    }
+  }
+
+  function writeLiveMonitorData(data) {
+    localStorage.setItem(LIVE_MONITOR_KEY, JSON.stringify(data));
+    if (channel) {
+      channel.postMessage({ type: "leaderboard-update" });
+    }
+  }
+
+  function updateLiveProgress(correctCount, wrongCount, currentQ, totalQ, isFinished, score) {
+    if (currentRole !== "student" || !studentName) return;
+    const data = readLiveMonitorData();
+    data[studentName] = {
+      name: studentName,
+      currentQuestion: currentQ,
+      totalQuestions: totalQ,
+      correct: correctCount,
+      wrong: wrongCount,
+      status: isFinished ? "Selesai" : "Sedang Mengerjakan",
+      score: score,
+      lastUpdated: Date.now()
+    };
+    writeLiveMonitorData(data);
+  }
+
+  function getLiveMonitorList() {
+    const data = readLiveMonitorData();
+    return Object.values(data).sort((a, b) => b.score - a.score);
+  }
+  
+  function clearLiveMonitor() {
+    localStorage.removeItem(LIVE_MONITOR_KEY);
+  }
+
   function getRole() {
     return currentRole || "student";
   }
@@ -163,6 +207,9 @@
     resetLeaderboard,
     getRole,
     setRole,
-    getStudentName
+    getStudentName,
+    updateLiveProgress,
+    getLiveMonitorList,
+    clearLiveMonitor
   };
 })();

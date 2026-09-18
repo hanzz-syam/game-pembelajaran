@@ -236,14 +236,9 @@
     const jsonParsed = parseJSONQuestions(text);
     if (jsonParsed.length > 0) return jsonParsed;
 
-    // Normalisasi baris
-    const lines = text
-      .replace(/\r\n/g, "\n")
-      .replace(/\r/g, "\n")
-      .split("\n")
-      .map(l => l.trim())
-      .filter(l => l.length > 0);
-    const fullContent = lines.join("\n");
+    // Bersihkan teks: hapus baris berurutan berlebih
+    let fullContent = text.replace(/\t/g, " ").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+    fullContent = fullContent.split('\n').map(l => l.trim()).filter(l => l.length > 0).join('\n');
 
     // Deteksi "KUNCI JAWABAN" terpisah di akhir dokumen
     let contentWithoutKey = fullContent;
@@ -253,7 +248,7 @@
     if (keyMatch) {
       const keySection = fullContent.substring(keyMatch.index);
       contentWithoutKey = fullContent.substring(0, keyMatch.index);
-      const keyPattern = /(\d+)\s*[.)\-:]\s*([A-D])/gi;
+      const keyPattern = /(\d+)\s*[.)\-:]\s*([A-E])/gi;
       let km;
       while ((km = keyPattern.exec(keySection)) !== null) {
         const qNum = parseInt(km[1], 10);
@@ -266,7 +261,7 @@
     const soalPositions = [];
     let m;
     while ((m = SOAL_REGEX.exec(contentWithoutKey)) !== null) {
-      soalPositions.push({ index: m.index, number: parseInt(m[1], 10) });
+      soalPositions.push({ index: m.index, number: parseInt(m[1], 10), matchLen: m[0].length });
     }
 
     if (soalPositions.length === 0) {
@@ -289,12 +284,13 @@
       // Pola Regex Fleksibel untuk Pilihan Jawaban: A., a., A), a), (A), [A] -> support sejajar (inline)
       const optMatches = [];
       let optM;
-      const optRx = /(?:^|\n|\s+)(?:\(?\[?([A-Da-d])\]?\)?)\s*[.)]\s+/g;
+      const optRx = /(?:^|\n|\s+)(?:\(?\[?([A-Ea-e])\]?\)?)\s*[.)]\s+/g;
       while ((optM = optRx.exec(block)) !== null) {
         const matchStr = optM[0];
         const matchIndex = optM.index;
         const leadingWsMatch = matchStr.match(/^\s+/);
         const leadingLen = leadingWsMatch ? leadingWsMatch[0].length : 0;
+        
         optMatches.push({
           index: matchIndex + leadingLen,
           matchLen: matchStr.length - leadingLen,
@@ -302,24 +298,33 @@
         });
       }
 
-      if (optMatches.length < 2) continue;
+      // Filter untuk memisahkan hasil ekstraksi opsi yang berurutan (misal: A, B, C, D)
+      const validOptMatches = [];
+      let expectedLetterCode = 65; // 'A'
+      for (const opt of optMatches) {
+        if (opt.letter.charCodeAt(0) === expectedLetterCode) {
+          validOptMatches.push(opt);
+          expectedLetterCode++;
+        }
+      }
+
+      if (validOptMatches.length < 2) continue;
 
       // Ekstrak teks soal (sebelum pilihan pertama)
-      let questionText = block.substring(0, optMatches[0].index).trim();
-      questionText = questionText
-        .replace(/^(?:Soal|No\.?|Nomor)?\s*\[?\d{1,3}\]?\s*[.):] */i, "")
-        .replace(/\s+/g, " ")
-        .trim();
+      let questionText = block.substring(0, validOptMatches[0].index).trim();
+      questionText = questionText.substring(soalPositions[si].matchLen).trim();
+      questionText = questionText.replace(/\s+/g, " ");
+
       if (!questionText || questionText.length < 3) continue;
 
       // Ekstrak teks setiap pilihan
       const options = [];
       const optLetters = [];
 
-      for (let oi = 0; oi < optMatches.length; oi++) {
-        const cur = optMatches[oi];
-        const nextStart = oi < optMatches.length - 1
-          ? optMatches[oi + 1].index
+      for (let oi = 0; oi < validOptMatches.length; oi++) {
+        const cur = validOptMatches[oi];
+        const nextStart = oi < validOptMatches.length - 1
+          ? validOptMatches[oi + 1].index
           : block.length;
 
         const rawOpt = block.substring(cur.index + cur.matchLen, nextStart);
@@ -336,34 +341,28 @@
       }
 
       if (options.length < 2) continue;
-      while (options.length > 4) { options.pop(); optLetters.pop(); }
 
       let kunciIndex = 0;
       
       // Deteksi Kunci Jawaban terpisah atau di akhir blok
       if (answerKeyMap.hasOwnProperty(qNum)) {
-        const val = answerKeyMap[qNum];
-        const expectedLetter = String.fromCharCode(65 + val);
-        const foundIdx = optLetters.indexOf(expectedLetter);
-        kunciIndex = foundIdx !== -1 ? foundIdx : val;
+        kunciIndex = answerKeyMap[qNum];
       } else {
         const kunciLineMatch = block.match(/(?:Kunci(?:\s*Jawaban)?|Jawaban(?:\s*Benar)?|Ans(?:wer)?|Key)\s*[:=.]?\s*([^\n]+)/i);
 
         if (kunciLineMatch) {
           let rawKunci = kunciLineMatch[1]
-            .replace(/^(?:Kunci(?:\s*Jawaban)?|Jawaban(?:\s*Benar)?|Ans(?:wer)?|Key)\s*[:=.]?\s*/i, "")
             .replace(/^[.:=\s\(\)\[\]]+|[.:=\s\(\)\[\]]+$/g, "")
             .trim()
             .toUpperCase();
 
-          // Cari pencocokan huruf (A-D) atau angka (1-4) di awal kunci
-          const charMatch = rawKunci.match(/^[\(\[]?([A-D1-4])[\)\]]?/i);
+          // Cari pencocokan huruf (A-E) atau angka (1-5) di awal kunci
+          const charMatch = rawKunci.match(/^[\(\[]?([A-E1-5])[\)\]]?/i);
           if (charMatch) {
             const val = charMatch[1].toUpperCase();
-            if (val >= "A" && val <= "D") {
-              const foundIdx = optLetters.indexOf(val);
-              kunciIndex = foundIdx !== -1 ? foundIdx : val.charCodeAt(0) - 65;
-            } else if (val >= "1" && val <= "4") {
+            if (val >= "A" && val <= "E") {
+              kunciIndex = val.charCodeAt(0) - 65;
+            } else if (val >= "1" && val <= "5") {
               kunciIndex = parseInt(val, 10) - 1;
             }
           } else {
@@ -389,21 +388,40 @@
     for (const para of paragraphs) {
       const optMatches = [];
       let optM;
-      const optRx = /(?:^|\n)\s*(?:\(?\[?([A-Da-d])\]?\)?)\s*[.)\s]\s*/g;
+      const optRx = /(?:^|\n|\s+)(?:\(?\[?([A-Ea-e])\]?\)?)\s*[.)]\s*/g;
       while ((optM = optRx.exec(para)) !== null) {
-        optMatches.push({ index: optM.index, matchLen: optM[0].length, letter: optM[1].toUpperCase() });
+        const matchStr = optM[0];
+        const matchIndex = optM.index;
+        const leadingWsMatch = matchStr.match(/^\s+/);
+        const leadingLen = leadingWsMatch ? leadingWsMatch[0].length : 0;
+        
+        optMatches.push({
+          index: matchIndex + leadingLen,
+          matchLen: matchStr.length - leadingLen,
+          letter: optM[1].toUpperCase()
+        });
       }
-      if (optMatches.length < 2) continue;
 
-      let qText = para.substring(0, optMatches[0].index)
+      const validOptMatches = [];
+      let expectedLetterCode = 65; // 'A'
+      for (const opt of optMatches) {
+        if (opt.letter.charCodeAt(0) === expectedLetterCode) {
+          validOptMatches.push(opt);
+          expectedLetterCode++;
+        }
+      }
+
+      if (validOptMatches.length < 2) continue;
+
+      let qText = para.substring(0, validOptMatches[0].index)
         .replace(/^(?:Soal|No\.?|Nomor)?\s*\[?\d{1,3}\]?\s*[.):] */i, "")
         .replace(/\s+/g, " ").trim();
       if (!qText || qText.length < 3) continue;
 
       const options = [], optLetters = [];
-      for (let oi = 0; oi < optMatches.length; oi++) {
-        const cur = optMatches[oi];
-        const nextStart = oi < optMatches.length - 1 ? optMatches[oi + 1].index : para.length;
+      for (let oi = 0; oi < validOptMatches.length; oi++) {
+        const cur = validOptMatches[oi];
+        const nextStart = oi < validOptMatches.length - 1 ? validOptMatches[oi + 1].index : para.length;
         const rawOpt = para.substring(cur.index + cur.matchLen, nextStart)
           .split(/(?:Kunci(?:\s*Jawaban)?|Jawaban(?:\s*Benar)?|Ans(?:wer)?|Key)\s*[:=.]/i)[0]
           .trim().replace(/\s+/g, " ");
@@ -417,17 +435,15 @@
       const km = para.match(/(?:Kunci(?:\s*Jawaban)?|Jawaban(?:\s*Benar)?|Ans(?:wer)?|Key)\s*[:=.]?\s*([^\n]+)/i);
       if (km) {
         let rawKunci = km[1]
-          .replace(/^(?:Kunci(?:\s*Jawaban)?|Jawaban(?:\s*Benar)?|Ans(?:wer)?|Key)\s*[:=.]?\s*/i, "")
           .replace(/^[.:=\s\(\)\[\]]+|[.:=\s\(\)\[\]]+$/g, "")
           .trim()
           .toUpperCase();
-        const charMatch = rawKunci.match(/^[\(\[]?([A-D1-4])[\)\]]?/i);
+        const charMatch = rawKunci.match(/^[\(\[]?([A-E1-5])[\)\]]?/i);
         if (charMatch) {
           const v = charMatch[1].toUpperCase();
-          if (v >= "A" && v <= "D") {
-            const fi = optLetters.indexOf(v);
-            kunciIndex = fi !== -1 ? fi : v.charCodeAt(0) - 65;
-          } else if (v >= "1" && v <= "4") {
+          if (v >= "A" && v <= "E") {
+            kunciIndex = v.charCodeAt(0) - 65;
+          } else if (v >= "1" && v <= "5") {
             kunciIndex = parseInt(v, 10) - 1;
           }
         } else {
@@ -548,11 +564,24 @@
       }
 
       if (parsed.length === 0) {
+        let debugRawText = "";
+        if (fileName.endsWith(".txt")) {
+          debugRawText = await file.text();
+        } else if (!fileName.endsWith(".json") && !fileName.endsWith(".csv") && !fileName.endsWith(".xls") && !fileName.endsWith(".xlsx")) {
+          debugRawText = await extractTextFromPDF(file);
+        }
+        
+        if (debugRawText) {
+          console.warn("==================================================");
+          console.warn("[PDFParser] Gagal parsing! Teks mentah PDF (Raw Text):");
+          console.warn(debugRawText);
+          console.warn("==================================================");
+        }
+
         return {
           success: false,
           count: 0,
-          message: "Tidak ada soal terdeteksi dalam '" + file.name + "'. " +
-            "Pastikan PDF mengandung teks (bukan gambar scan), atau gunakan JSON/CSV/Excel."
+          message: "Tidak ada soal terdeteksi dalam '" + file.name + "'. Cek console browser (F12) untuk melihat teks mentah PDF/TXT sebagai panduan debug."
         };
       }
 
