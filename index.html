@@ -163,6 +163,7 @@ Kunci: B"></textarea>
       <button id="btn-mute" class="icon-btn" title="Mute/Unmute">🔊</button>
       <button id="btn-shop" class="icon-btn" title="Toko Dekorasi">🏪</button>
       <button id="btn-multiplayer" class="icon-btn" title="Papan Peringkat">🏆</button>
+      <button id="btn-exit" class="icon-btn btn-exit-icon" title="Keluar">🚪</button>
     </div>
   </div>
 
@@ -198,6 +199,18 @@ Kunci: B"></textarea>
     </div>
   </div>
 
+  <!-- ---------- EXIT CONFIRM MODAL ---------- -->
+  <div id="exit-confirm-modal" class="modal-overlay hidden">
+    <div class="glass modal-card">
+      <h2>🚪 Konfirmasi Keluar</h2>
+      <p style="margin-bottom: 20px; font-weight: 600; color: #1e3054;">Apakah kamu yakin ingin keluar ke Menu Utama?</p>
+      <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+        <button id="btn-exit-yes" class="btn-3d btn-red">Ya, Keluar</button>
+        <button id="btn-exit-no" class="btn-3d btn-blue">Batal</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ---------- LEADERBOARD MODAL ---------- -->
   <div id="leaderboard-modal" class="modal-overlay hidden">
     <div class="glass modal-card">
@@ -228,6 +241,37 @@ Kunci: B"></textarea>
       <p>Skor Akhir: <span id="lc-final-score">0</span></p>
       <p>Koin Terkumpul: <span id="lc-final-coin">0</span></p>
       <button id="btn-goto-town" class="btn-3d btn-blue">🏡 Bangun Rumah Impian</button>
+    </div>
+  </div>
+
+  <!-- ---------- RESULT SCREEN MODAL (QUIZIZZ STYLE) ---------- -->
+  <div id="result-screen-modal" class="modal-overlay hidden">
+    <div class="glass modal-card result-card">
+      <h2>🎉 Hasil Akhir Kuis 🎉</h2>
+      <div class="player-result-info">
+        <p>Nama: <span id="rs-player-name">-</span></p>
+        <p>Skor Kamu: <span id="rs-player-score">0</span></p>
+        <p>Peringkat Kamu: <span id="rs-player-rank">#0 dari 0 pemain</span></p>
+      </div>
+      
+      <h3>🏆 Papan Peringkat (Top 5)</h3>
+      <table class="result-leaderboard-table">
+        <thead>
+          <tr>
+            <th>Peringkat</th>
+            <th>Nama Pemain</th>
+            <th>Total Poin</th>
+          </tr>
+        </thead>
+        <tbody id="rs-leaderboard-body">
+          <!-- Rows injected via JS -->
+        </tbody>
+      </table>
+
+      <div style="display: flex; gap: 10px; justify-content: center; margin-top: 15px; flex-wrap: wrap;">
+        <button id="btn-rs-town" class="btn-3d btn-blue">🏡 Bangun Rumah</button>
+        <button id="btn-rs-exit" class="btn-3d btn-red">🚪 Keluar ke Menu Utama</button>
+      </div>
     </div>
   </div>
 </div>

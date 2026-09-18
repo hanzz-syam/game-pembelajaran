@@ -53,7 +53,10 @@
       "shop-modal", "shop-coin-value", "shop-items", "btn-close-shop",
       "leaderboard-modal", "lb-modal-list", "btn-clear-lb-modal", "btn-close-lb",
       "gameover-modal", "final-score", "final-coin", "btn-restart",
-      "levelcomplete-modal", "lc-final-score", "lc-final-coin", "btn-goto-town"
+      "levelcomplete-modal", "lc-final-score", "lc-final-coin", "btn-goto-town",
+      "result-screen-modal", "rs-player-name", "rs-player-score", "rs-player-rank", 
+      "rs-leaderboard-body", "btn-rs-town", "btn-rs-exit",
+      "btn-exit", "exit-confirm-modal", "btn-exit-yes", "btn-exit-no"
     ];
     ids.forEach((id) => (dom[id] = document.getElementById(id)));
   }
@@ -630,6 +633,27 @@
       dom["levelcomplete-modal"].classList.add("hidden");
       openShop();
     });
+
+    dom["btn-rs-exit"].addEventListener("click", () => {
+      window.location.reload();
+    });
+
+    dom["btn-rs-town"].addEventListener("click", () => {
+      dom["result-screen-modal"].classList.add("hidden");
+      openShop();
+    });
+
+    dom["btn-exit"].addEventListener("click", () => {
+      dom["exit-confirm-modal"].classList.remove("hidden");
+    });
+
+    dom["btn-exit-yes"].addEventListener("click", () => {
+      window.location.reload();
+    });
+
+    dom["btn-exit-no"].addEventListener("click", () => {
+      dom["exit-confirm-modal"].classList.add("hidden");
+    });
   }
 
   function openShop() {
@@ -861,21 +885,66 @@
     }, 1000);
   }
 
+  function saveToLeaderboardAndShowResult() {
+    let playerName = window.MultiplayerModule ? window.MultiplayerModule.getStudentName() : "";
+    if (!playerName || playerName === "Murid") {
+      playerName = prompt("Kuis selesai! Masukkan nama kamu:") || "Pemain Tanpa Nama";
+    }
+
+    const finalScore = state.score;
+    const now = new Date().toISOString();
+
+    let leaderboard = [];
+    try {
+      const data = localStorage.getItem("GAME_LEADERBOARD");
+      if (data) leaderboard = JSON.parse(data);
+    } catch(e) {}
+
+    leaderboard.push({ name: playerName, score: finalScore, time: now });
+    leaderboard.sort((a, b) => b.score - a.score);
+    localStorage.setItem("GAME_LEADERBOARD", JSON.stringify(leaderboard));
+
+    const rank = leaderboard.findIndex(p => p.name === playerName && p.score === finalScore && p.time === now) + 1;
+    const totalPlayers = leaderboard.length;
+
+    dom["rs-player-name"].textContent = playerName;
+    dom["rs-player-score"].textContent = finalScore;
+    dom["rs-player-rank"].textContent = `#${rank} dari ${totalPlayers} pemain`;
+
+    const tbody = dom["rs-leaderboard-body"];
+    tbody.innerHTML = "";
+    leaderboard.slice(0, 5).forEach((p, index) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>#${index + 1}</td>
+        <td>${escapeHtml(p.name)}</td>
+        <td>${p.score}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+    dom["gameover-modal"].classList.add("hidden");
+    dom["levelcomplete-modal"].classList.add("hidden");
+    dom["result-screen-modal"].classList.remove("hidden");
+
+    if (state.hp <= 0) {
+      dom["btn-rs-town"].style.display = "none";
+    } else {
+      dom["btn-rs-town"].style.display = "inline-block";
+    }
+  }
+
   function triggerGameOver() {
     state.isGameOver = true;
     window.AudioModule.stopBGM();
     window.AudioModule.playGameOverSFX();
-    dom["final-score"].textContent = state.score;
-    dom["final-coin"].textContent = state.coins;
-    dom["gameover-modal"].classList.remove("hidden");
+    saveToLeaderboardAndShowResult();
   }
 
   function triggerLevelComplete() {
     if (state.isLevelComplete) return;
     state.isLevelComplete = true;
-    dom["lc-final-score"].textContent = state.score;
-    dom["lc-final-coin"].textContent = state.coins;
-    dom["levelcomplete-modal"].classList.remove("hidden");
+    saveToLeaderboardAndShowResult();
   }
 
   // ---------------- Movement & camera ----------------

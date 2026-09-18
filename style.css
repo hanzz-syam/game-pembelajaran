@@ -692,6 +692,81 @@ input[type="file"]:hover {
 }
 #game-canvas { display: block; width: 100%; height: 100%; }
 
+/* =========================================================
+   RESULT SCREEN (QUIZIZZ STYLE)
+   ========================================================= */
+.result-card {
+  max-width: 500px;
+  width: 95%;
+}
+
+.result-card h2 {
+  font-size: 26px;
+  color: var(--aj-purple-dark);
+  margin-bottom: 16px;
+  text-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.player-result-info {
+  background: linear-gradient(135deg, #e0f8ff, #bdeaff);
+  border: 2px solid var(--aj-sky);
+  border-radius: var(--radius-md);
+  padding: 14px;
+  margin-bottom: 20px;
+  font-weight: 700;
+  font-size: 16px;
+  color: #1e3054;
+  box-shadow: 0 4px 10px rgba(91,200,245,0.2);
+}
+
+.player-result-info p {
+  margin: 4px 0;
+}
+
+.player-result-info span {
+  color: var(--aj-purple-dark);
+}
+
+.result-card h3 {
+  font-size: 18px;
+  margin-bottom: 12px;
+  color: #1e3054;
+}
+
+.result-leaderboard-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 20px;
+  background: rgba(255,255,255,0.7);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+}
+
+.result-leaderboard-table th, .result-leaderboard-table td {
+  padding: 10px;
+  text-align: center;
+  border-bottom: 1px solid rgba(0,0,0,0.05);
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.result-leaderboard-table th {
+  background: var(--aj-purple);
+  color: white;
+  text-transform: uppercase;
+  font-size: 12px;
+  letter-spacing: 0.5px;
+}
+
+.result-leaderboard-table tr:last-child td {
+  border-bottom: none;
+}
+
+.result-leaderboard-table tbody tr:nth-child(even) {
+  background: rgba(255,255,255,0.4);
+}
+
 /* Screen shake (damage hit) */
 @keyframes screenShake {
   0%   { transform: translate(0,0); }
@@ -769,6 +844,7 @@ input[type="file"]:hover {
 }
 .icon-btn:hover { transform: translateY(-2px) scale(1.08); }
 .icon-btn:active { transform: translateY(3px); box-shadow: 0 1px 0 rgba(0,0,0,0.12); }
+.btn-exit-icon { color: var(--aj-red-dark); }
 
 /* =========================================================
    QUESTION PANEL — Animal Jam Style
