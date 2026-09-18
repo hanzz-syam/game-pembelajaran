@@ -153,26 +153,13 @@
       showScreen("teacher-upload-screen");
     });
 
-    // Tombol MURID → baca GAME_QUIZ_DATA, jangan hapus apapun
+    // Tombol MURID → buka layar Join (input PIN & nama)
     dom["btn-mode-student"].addEventListener("click", () => {
       window.AudioModule.ensureContext();
       window.AudioModule.playMenuBGM();
 
-      // Baca soal dari kunci resmi GAME_QUIZ_DATA
-      const savedData = JSON.parse(localStorage.getItem("GAME_QUIZ_DATA") || "[]");
-
-      if (savedData.length > 0) {
-        // Soal tersedia → muat ke QuestionsModule lalu lanjut ke layar Join
-        if (window.QuestionsModule && typeof window.QuestionsModule.setQuestionsFromPDF === "function") {
-          window.QuestionsModule.setQuestionsFromPDF(savedData);
-        }
-        console.log("[Murid] ✅ Soal berhasil dibaca dari GAME_QUIZ_DATA:", savedData.length, "soal.");
-        showScreen("join-screen");
-      } else {
-        // Diagnostik: tampilkan isi memori saat ini
-        alert("Isi memori saat ini: " + localStorage.getItem("GAME_QUIZ_DATA"));
-        showNoQuizWarning();
-      }
+      // Selalu arahkan ke layar join PIN & Nama tanpa memblokir di awal
+      showScreen("join-screen");
     });
   }
 
@@ -430,10 +417,32 @@
       showScreen("start-screen");
     });
     dom["btn-join-class"].addEventListener("click", () => {
-      const name = dom["student-name"].value.trim() || "Murid";
-      const pin = dom["student-pin"].value.trim();
-      window.MultiplayerModule.joinAsStudent(name, pin);
-      startGame();
+      const name = (dom["student-name"].value || "").trim() || "Murid";
+      const pin = (dom["student-pin"].value || "").trim();
+
+      const joinBtn = dom["btn-join-class"];
+      const originalText = joinBtn.textContent;
+      joinBtn.disabled = true;
+      joinBtn.textContent = "⏳ Hubungkan & Unduh Soal...";
+
+      if (window.MultiplayerModule && typeof window.MultiplayerModule.connectAndJoin === "function") {
+        window.MultiplayerModule.connectAndJoin(name, pin, (res) => {
+          joinBtn.disabled = false;
+          joinBtn.textContent = originalText;
+
+          if (res && res.success) {
+            console.log("[JoinSuccess] ✅ Berhasil mengunduh & memuat", res.count, "soal!");
+            startGame();
+          } else {
+            alert((res && res.message) ? res.message : "Gagal terhubung. Pastikan PIN benar dan Guru dalam posisi online.");
+          }
+        });
+      } else {
+        joinBtn.disabled = false;
+        joinBtn.textContent = originalText;
+        window.MultiplayerModule.joinAsStudent(name, pin);
+        startGame();
+      }
     });
   }
 
