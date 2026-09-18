@@ -322,8 +322,9 @@
   function expandTreeDensityAndVariety(questionIndex) {
     if (!islands || !islands.length) return;
 
-    const TREE_MIN_DIST = 2.8;   // Radius penjarakan minimum antar pohon
-    const MAX_ATTEMPTS = 20;     // Batas maksimum upaya penempatan per pohon
+    // Perbaiki Bug Pohon Bertindih
+    const TREE_MIN_DIST = 6.0;   // Jarak aman minimum antar pohon (6 unit)
+    const MAX_ATTEMPTS = 30;     // Batas maksimum upaya penempatan per pohon
 
     islands.forEach((island, iIndex) => {
       if (island.userData.isTown) return;
@@ -331,11 +332,13 @@
       const rad = island.userData.radius || ISLAND_RADIUS;
       const GROUND_Y = 0.7;
 
-      // Kumpulkan posisi pohon yang sudah ada di pulau ini
-      const existingTrees = [];
+      // Buat array penampung posisi pohon
+      const spawnPositions = [];
+      
+      // Kumpulkan posisi pohon yang sudah ada di pulau ini dari awal
       island.traverse((child) => {
         if (child.name && child.name.startsWith("Tree_")) {
-          existingTrees.push({ x: child.position.x, z: child.position.z });
+          spawnPositions.push({ x: child.position.x, z: child.position.z });
         }
       });
 
@@ -359,7 +362,7 @@
 
           // Periksa jarak terhadap semua pohon yang sudah ada
           let tooClose = false;
-          for (const existing of existingTrees) {
+          for (const existing of spawnPositions) {
             if (Math.hypot(tx - existing.x, tz - existing.z) < TREE_MIN_DIST) {
               tooClose = true;
               break;
@@ -372,7 +375,7 @@
           }
 
           // Posisi valid — catat dan keluar dari loop percobaan
-          existingTrees.push({ x: tx, z: tz });
+          spawnPositions.push({ x: tx, z: tz });
           placed = true;
           break;
         }
@@ -479,51 +482,47 @@
    * Diposisikan jauh di belakang pulau agar tidak menghalangi UI.
    */
   function buildRainbow() {
-    // 7 pita warna pelangi (dari luar ke dalam)
+    // 5 pita warna cerah pelangi (dikunci ke kamera agar selalu terlihat)
     const RAINBOW_COLORS = [
-      0xff0000, // Merah
-      0xff7700, // Jingga
-      0xffee00, // Kuning
+      0xff2020, // Merah
+      0xffdd00, // Kuning
       0x00cc44, // Hijau
-      0x0066ff, // Biru
-      0x4400cc, // Nila
-      0xcc00ff  // Ungu
+      0x2288ff, // Biru
+      0xaa00ff  // Ungu
     ];
 
     const rainbowGroup = new THREE.Group();
     rainbowGroup.name = "Rainbow";
 
-    const BASE_RADIUS = 38;
-    const BAND_THICKNESS = 1.05;
-    const TUBE_RADIUS = 1.8;
+    const BASE_RADIUS = 18;
+    const BAND_GAP = 2.0;
+    const TUBE_RADIUS = 1.0;
 
     RAINBOW_COLORS.forEach((color, i) => {
-      const radius = BASE_RADIUS - i * BAND_THICKNESS;
-      const geo = new THREE.TorusGeometry(radius, TUBE_RADIUS, 12, 80, Math.PI);
-      const mat = new THREE.MeshStandardMaterial({
+      const radius = BASE_RADIUS - i * BAND_GAP;
+      const geo = new THREE.TorusGeometry(radius, TUBE_RADIUS, 16, 100, Math.PI);
+      const mat = new THREE.MeshBasicMaterial({
         color: color,
-        emissive: color,
-        emissiveIntensity: 0.22,
         transparent: true,
-        opacity: 0.52 - i * 0.015,
-        side: THREE.DoubleSide,
-        roughness: 0.6,
-        depthWrite: false
+        opacity: 0.75,
+        side: THREE.DoubleSide
       });
       const band = new THREE.Mesh(geo, mat);
       rainbowGroup.add(band);
     });
 
-    // Posisikan pelangi jauh di langit latar belakang
-    // x: di tengah rantai pulau, y: tinggi di langit, z: jauh ke belakang
-    const centerX = (window.QuestionsModule ? window.QuestionsModule.getQuestionCount() : 3) * ISLAND_SPACING * 0.5;
-    rainbowGroup.position.set(centerX, 22, -75);
-    // Rotasikan agar setengah lingkaran menghadap pemain
-    rainbowGroup.rotation.x = 0; // setengah busur mengarah ke atas
+    // Kunci pelangi ke kamera agar 100% selalu terlihat
+    // Posisi lokal relatif terhadap kamera
+    rainbowGroup.position.set(0, 4, -35);
+    rainbowGroup.rotation.x = -Math.PI / 14;
+    rainbowGroup.scale.set(1.4, 1.4, 1.4);
 
-    rainbowGroup.userData = { baseY: 22, pulse: 0 };
-    scene.add(rainbowGroup);
+    // Tambah pelangi ke kamera, lalu pastikan kamera ada di scene
+    camera.add(rainbowGroup);
+    scene.add(camera);
+
     rainbowMesh = rainbowGroup;
+    console.log('Pelangi dikunci ke kamera!');
     return rainbowGroup;
   }
 
