@@ -119,8 +119,6 @@
     // Bandingkan secara langsung: indexTombolDiklik === soal.kunciIndex
     const isCorrect = (indexTombolDiklik === kunciIndex);
 
-    console.log("[Questions] 🎯 Tombol Diklik Index:", indexTombolDiklik, "| Kunci Index Sistem:", kunciIndex, "| Hasil:", isCorrect ? "✅ BENAR" : "❌ SALAH");
-
     return {
       isCorrect: isCorrect,
       kunciIndex: kunciIndex,
@@ -138,11 +136,35 @@
     if (!Array.isArray(parsedQuestions) || parsedQuestions.length === 0) {
       return false;
     }
-    // Hapus data kuis lama di localStorage dan simpan yang baru
+    // Hapus data kuis lama di localStorage dan simpan yang baru (KHUSUS GURU)
     saveToStorage(parsedQuestions);
     activeQuestions = shuffle(parsedQuestions.slice());
     usingCustomFile = true;
-    console.log("[Questions] 🚀 Bank soal aktif diperbarui dari file baru:", parsedQuestions.length, "soal.");
+    console.log("[Questions] 🚀 Bank soal aktif Guru diperbarui:", parsedQuestions.length, "soal.");
+    return true;
+  }
+
+  /* ── Khusus Murid: Muat soal ke memori permainan TANPA menimpa GAME_QUIZ_DATA Guru ── */
+  function setStudentQuestions(questions) {
+    if (!Array.isArray(questions) || questions.length === 0) {
+      return false;
+    }
+    const normalized = questions.map(item => {
+      let kIdx = 0;
+      if (item.kunciIndex !== undefined) {
+        kIdx = Number(item.kunciIndex);
+      } else if (item.correctIndex !== undefined) {
+        kIdx = Number(item.correctIndex);
+      }
+      return {
+        question: item.question || item.soal || item.pertanyaan || "",
+        options: item.options || item.opsi || [],
+        kunciIndex: Math.max(0, Math.min(3, kIdx))
+      };
+    });
+    activeQuestions = shuffle(normalized);
+    usingCustomFile = true;
+    console.log("[Questions] 🎮 Soal sesi Murid berhasil dimuat ke memori game:", activeQuestions.length, "soal.");
     return true;
   }
 
@@ -160,6 +182,7 @@
   window.QuestionsModule = {
     getQuestions: getQuestions,
     setQuestionsFromPDF: setQuestionsFromPDF,
+    setStudentQuestions: setStudentQuestions,
     resetToFallback: resetToFallback,
     isUsingCustomPDF: isUsingCustomPDF,
     getQuestionCount: getQuestionCount,
@@ -170,5 +193,5 @@
   };
 
   console.log("[Questions] questions.js dimuat OK. Soal aktif:", activeQuestions.length,
-    usingCustomFile ? "(dari localStorage GAME_QUIZ_DATA)" : "(belum ada soal — Guru belum upload)");
+    usingCustomFile ? "(dari penyimpanan kuis)" : "(belum ada soal)");
 })();

@@ -117,6 +117,7 @@ Kunci: B"></textarea>
       <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 15px;">
         <button id="btn-teacher-resume" class="btn-3d btn-blue btn-large hidden">📊 Lanjut Pantau Murid (PIN: <span id="teacher-resume-pin">------</span>)</button>
         <button id="btn-teacher-start" class="btn-3d btn-green btn-large" disabled>🚀 Mulai Game / Buat Kode</button>
+        <button id="btn-teacher-change-pin" class="btn-3d btn-purple btn-small" title="Ganti PIN masuk Guru">🔑 Ganti PIN</button>
         <button id="btn-teacher-clear-quiz" class="btn-3d btn-red btn-small hidden" title="Hapus soal tersimpan di browser">🗑️ Hapus Soal</button>
         <button id="btn-teacher-upload-back" class="btn-3d btn-red btn-small">⬅ Kembali</button>
       </div>
@@ -324,9 +325,60 @@ Kunci: B"></textarea>
     </div>
   </div>
 
+  <!-- ==================== TEACHER AUTH MODAL ==================== -->
+  <div id="teacher-auth-modal" class="modal-overlay hidden">
+    <div class="glass modal-card teacher-auth-card">
+      <div style="font-size: 42px; margin-bottom: 8px;">🔐</div>
+      <h2>Akses Khusus Guru</h2>
+      <p style="font-size: 14px; margin-bottom: 16px; color: #475569; line-height: 1.5;">
+        Hanya Guru yang dapat mengunggah soal dan melihat kunci jawaban.<br>
+        Masukkan PIN Guru untuk melanjutkan:
+      </p>
+      <input type="password" id="teacher-pin-input" placeholder="Masukkan PIN Guru" maxlength="12" class="text-input" style="text-align: center; letter-spacing: 4px; font-size: 18px; max-width: 240px; margin: 0 auto 12px auto; display: block;">
+      <p id="teacher-auth-error" class="pdf-status" style="color: #ef4444; margin-bottom: 14px; min-height: 20px; font-weight: 600;"></p>
+      <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+        <button id="btn-submit-teacher-pin" class="btn-3d btn-green">🔓 Masuk</button>
+        <button id="btn-cancel-teacher-pin" class="btn-3d btn-red btn-small">Batal</button>
+      </div>
+      <p style="font-size: 11.5px; color: #64748b; margin-top: 14px;">PIN awal bawaan: <strong>1234</strong> (Dapat diubah setelah masuk)</p>
+    </div>
+  </div>
+
+  <!-- ==================== TEACHER CHANGE PIN MODAL ==================== -->
+  <div id="teacher-change-pin-modal" class="modal-overlay hidden">
+    <div class="glass modal-card">
+      <div style="font-size: 36px; margin-bottom: 8px;">🔑</div>
+      <h2>Ubah PIN Guru</h2>
+      <p style="font-size: 13.5px; margin-bottom: 14px; color: #475569;">
+        Atur PIN baru agar murid tidak dapat mengakses panel Guru di perangkat ini.
+      </p>
+      <input type="password" id="teacher-new-pin-input" placeholder="PIN baru (min. 4 digit/karakter)" maxlength="16" class="text-input" style="text-align: center; font-size: 16px; max-width: 260px; margin: 0 auto 10px auto; display: block;">
+      <p id="teacher-change-pin-status" class="pdf-status" style="min-height: 20px; font-weight: 600;"></p>
+      <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+        <button id="btn-save-new-pin" class="btn-3d btn-green">💾 Simpan PIN</button>
+        <button id="btn-cancel-new-pin" class="btn-3d btn-red btn-small">Batal</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== SITE EXIT CONFIRM MODAL ==================== -->
+  <div id="site-exit-confirm-modal" class="modal-overlay hidden">
+    <div class="glass modal-card">
+      <div style="font-size: 42px; margin-bottom: 8px;">🏡</div>
+      <h2>Keluar dari Website?</h2>
+      <p style="margin-bottom: 20px; font-weight: 600; color: #1e3054; line-height: 1.5;">
+        Apakah Anda yakin ingin meninggalkan website permainan Petualangan Langit?
+      </p>
+      <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+        <button id="btn-site-exit-yes" class="btn-3d btn-red">Ya, Keluar</button>
+        <button id="btn-site-exit-no" class="btn-3d btn-blue">Tetap di Sini</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ==================== SCRIPT LOAD ORDER (WAJIB) ==================== -->
   <script src="firebase-config.js?v=3.2"></script>
-  <script src="questions.js?v=2.0"></script>
+  <script src="questions.js?v=2.1"></script>
   <script src="pdf-parser.js?v=2.0"></script>
   <script src="audio.js?v=2.0"></script>
   <script src="physics.js?v=2.0"></script>
@@ -334,10 +386,10 @@ Kunci: B"></textarea>
   <script src="world.js?v=2.0"></script>
   <script src="player.js?v=2.0"></script>
   <script src="townBuilder.js?v=2.0"></script>
-  <script src="multiplayer.js?v=3.3"></script>
+  <script src="multiplayer.js?v=3.4"></script>
   <!-- Modul pemuatan & penempatan semua model GLB langsung dari folder models/ (tanpa Base64) -->
-  <script src="model_loader.js?v=2.0"></script>
-  <script src="game.js?v=3.3"></script>
+  <script src="model_loader.js?v=2.1"></script>
+  <script src="game.js?v=3.4"></script>
 </body>
 
 </html>

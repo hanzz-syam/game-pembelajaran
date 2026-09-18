@@ -59,7 +59,10 @@
       "result-screen-modal", "rs-player-name", "rs-player-score", "rs-player-rank", 
       "rs-leaderboard-body", "btn-rs-town", "btn-rs-exit",
       "btn-exit", "exit-confirm-modal", "btn-exit-yes", "btn-exit-no",
-      "lm-total", "lm-done", "lm-progress"
+      "lm-total", "lm-done", "lm-progress",
+      "teacher-auth-modal", "teacher-pin-input", "btn-submit-teacher-pin", "btn-cancel-teacher-pin", "teacher-auth-error",
+      "btn-teacher-change-pin", "teacher-change-pin-modal", "teacher-new-pin-input", "btn-save-new-pin", "btn-cancel-new-pin", "teacher-change-pin-status",
+      "site-exit-confirm-modal", "btn-site-exit-yes", "btn-site-exit-no"
     ];
     ids.forEach((id) => (dom[id] = document.getElementById(id)));
   }
@@ -152,12 +155,281 @@
     }, 220);
   }
 
+  // -------- Teacher Security & PIN Protection --------
+  const TEACHER_PIN_KEY = "GAME_TEACHER_PIN_v1";
+  let isTeacherAuthenticated = false;
+
+  function getTeacherPin() {
+    return localStorage.getItem(TEACHER_PIN_KEY) || "1234";
+  }
+
+  function setTeacherPin(newPin) {
+    localStorage.setItem(TEACHER_PIN_KEY, newPin);
+  }
+
+  function openTeacherAuthModal() {
+    if (!dom["teacher-auth-modal"]) return;
+    if (dom["teacher-pin-input"]) {
+      dom["teacher-pin-input"].value = "";
+    }
+    if (dom["teacher-auth-error"]) {
+      dom["teacher-auth-error"].textContent = "";
+    }
+    openModal("teacher-auth-modal");
+    setTimeout(() => {
+      if (dom["teacher-pin-input"]) dom["teacher-pin-input"].focus();
+    }, 100);
+  }
+
+  function submitTeacherPin() {
+    const entered = (dom["teacher-pin-input"] ? dom["teacher-pin-input"].value : "").trim();
+    const correctPin = getTeacherPin();
+    if (entered === correctPin) {
+      isTeacherAuthenticated = true;
+      closeModal("teacher-auth-modal");
+      loadAndRestoreTeacherData();
+      showScreen("teacher-upload-screen");
+    } else {
+      if (dom["teacher-auth-error"]) {
+        dom["teacher-auth-error"].textContent = "❌ PIN Guru salah! Silakan periksa kembali.";
+      }
+      if (dom["teacher-pin-input"]) {
+        dom["teacher-pin-input"].value = "";
+        dom["teacher-pin-input"].focus();
+      }
+    }
+  }
+
+  function bindTeacherAuthEvents() {
+    if (dom["btn-submit-teacher-pin"]) {
+      dom["btn-submit-teacher-pin"].addEventListener("click", submitTeacherPin);
+    }
+    if (dom["teacher-pin-input"]) {
+      dom["teacher-pin-input"].addEventListener("keydown", (e) => {
+        if (e.key === "Enter") submitTeacherPin();
+      });
+    }
+    if (dom["btn-cancel-teacher-pin"]) {
+      dom["btn-cancel-teacher-pin"].addEventListener("click", () => {
+        closeModal("teacher-auth-modal");
+      });
+    }
+
+    // Modal Ubah PIN
+    if (dom["btn-teacher-change-pin"]) {
+      dom["btn-teacher-change-pin"].addEventListener("click", () => {
+        if (dom["teacher-new-pin-input"]) dom["teacher-new-pin-input"].value = "";
+        if (dom["teacher-change-pin-status"]) dom["teacher-change-pin-status"].textContent = "";
+        openModal("teacher-change-pin-modal");
+        setTimeout(() => {
+          if (dom["teacher-new-pin-input"]) dom["teacher-new-pin-input"].focus();
+        }, 100);
+      });
+    }
+
+    if (dom["btn-save-new-pin"]) {
+      dom["btn-save-new-pin"].addEventListener("click", () => {
+        const newPin = (dom["teacher-new-pin-input"] ? dom["teacher-new-pin-input"].value : "").trim();
+        if (!newPin || newPin.length < 4) {
+          if (dom["teacher-change-pin-status"]) {
+            dom["teacher-change-pin-status"].textContent = "⚠️ PIN minimal 4 digit/karakter!";
+            dom["teacher-change-pin-status"].style.color = "#ef4444";
+          }
+          return;
+        }
+        setTeacherPin(newPin);
+        if (dom["teacher-change-pin-status"]) {
+          dom["teacher-change-pin-status"].textContent = "✅ PIN Guru berhasil disimpan!";
+          dom["teacher-change-pin-status"].style.color = "#2ea84e";
+        }
+        setTimeout(() => {
+          closeModal("teacher-change-pin-modal");
+        }, 800);
+      });
+    }
+
+    if (dom["btn-cancel-new-pin"]) {
+      dom["btn-cancel-new-pin"].addEventListener("click", () => {
+        closeModal("teacher-change-pin-modal");
+      });
+    }
+
+    // Modal Konfirmasi Keluar Website
+    if (dom["btn-site-exit-yes"]) {
+      dom["btn-site-exit-yes"].addEventListener("click", () => {
+        closeModal("site-exit-confirm-modal");
+        try {
+          window.history.go(-2);
+        } catch (e) {
+          window.close();
+        }
+      });
+    }
+
+    if (dom["btn-site-exit-no"]) {
+      dom["btn-site-exit-no"].addEventListener("click", () => {
+        closeModal("site-exit-confirm-modal");
+      });
+    }
+  }
+
+  // -------- Navigation & History Manager (Anti-Exit & Hash Routing) --------
+  const SCREEN_ROUTES = {
+    "start-screen": "#menu",
+    "teacher-upload-screen": "#guru-upload",
+    "teacher-screen": "#guru-pantau",
+    "join-screen": "#gabung",
+    "game-container": "#main"
+  };
+
+  let currentScreenId = "start-screen";
+  let isNavigatingHistory = false;
+
+  function getOpenModal() {
+    const modalIds = [
+      "site-exit-confirm-modal",
+      "teacher-auth-modal",
+      "teacher-change-pin-modal",
+      "shop-modal",
+      "leaderboard-modal",
+      "exit-confirm-modal",
+      "gameover-modal",
+      "levelcomplete-modal",
+      "result-screen-modal"
+    ];
+    for (const id of modalIds) {
+      if (dom[id] && !dom[id].classList.contains("hidden")) {
+        return id;
+      }
+    }
+    return null;
+  }
+
+  function closeAllModals() {
+    const modalIds = [
+      "site-exit-confirm-modal",
+      "teacher-auth-modal",
+      "teacher-change-pin-modal",
+      "shop-modal",
+      "leaderboard-modal",
+      "exit-confirm-modal"
+    ];
+    modalIds.forEach((id) => {
+      if (dom[id]) dom[id].classList.add("hidden");
+    });
+  }
+
+  function openModal(id) {
+    if (dom[id]) {
+      dom[id].classList.remove("hidden");
+      if (!isNavigatingHistory) {
+        try {
+          history.pushState({ screen: currentScreenId, modal: id }, "", window.location.hash);
+        } catch (e) {}
+      }
+    }
+  }
+
+  function closeModal(id) {
+    if (dom[id]) {
+      dom[id].classList.add("hidden");
+    }
+  }
+
   // ---------------- Screen management ----------------
-  function showScreen(id) {
+  function showScreen(id, updateHistory = true) {
     ["loading-screen", "start-screen", "teacher-upload-screen", "teacher-screen", "join-screen", "game-container"].forEach((s) => {
       if (dom[s]) dom[s].classList.add("hidden");
     });
     if (dom[id]) dom[id].classList.remove("hidden");
+    currentScreenId = id;
+
+    // Tutup modal yang tidak relevan saat layar berganti
+    closeAllModals();
+
+    if (updateHistory && !isNavigatingHistory && id !== "loading-screen") {
+      const hash = SCREEN_ROUTES[id] || "#menu";
+      try {
+        if (window.location.hash !== hash) {
+          history.pushState({ screen: id }, "", hash);
+        } else {
+          history.replaceState({ screen: id }, "", hash);
+        }
+      } catch (e) {}
+    }
+  }
+
+  function setupNavigationManager() {
+    // Set rute awal saat aplikasi dibuka
+    try {
+      history.replaceState({ screen: "start-screen" }, "", "#menu");
+    } catch (e) {}
+
+    // Event listener popstate (Tombol Back browser / Gesture Back HP)
+    window.addEventListener("popstate", (e) => {
+      isNavigatingHistory = true;
+
+      // 1. Jika ada modal yang terbuka: tutup modal tersebut, tetap di layar saat ini
+      const openModalId = getOpenModal();
+      if (openModalId) {
+        closeModal(openModalId);
+        const currentHash = SCREEN_ROUTES[currentScreenId] || "#menu";
+        try {
+          history.pushState({ screen: currentScreenId }, "", currentHash);
+        } catch (err) {}
+        isNavigatingHistory = false;
+        return;
+      }
+
+      // 2. Jika sedang di dalam game (#main / game-container)
+      if (currentScreenId === "game-container") {
+        // Tampilkan modal konfirmasi keluar game, jangan langsung keluar dari web
+        if (dom["exit-confirm-modal"]) {
+          dom["exit-confirm-modal"].classList.remove("hidden");
+        }
+        try {
+          history.pushState({ screen: "game-container" }, "", "#main");
+        } catch (err) {}
+        isNavigatingHistory = false;
+        return;
+      }
+
+      // 3. Jika sedang di layar sub-menu (Upload Guru, Pantau Guru, Join Murid)
+      if (currentScreenId === "teacher-upload-screen" || currentScreenId === "teacher-screen" || currentScreenId === "join-screen") {
+        showScreen("start-screen", false);
+        try {
+          history.pushState({ screen: "start-screen" }, "", "#menu");
+        } catch (err) {}
+        isNavigatingHistory = false;
+        return;
+      }
+
+      // 4. Jika sedang di Menu Utama (start-screen / #menu)
+      if (currentScreenId === "start-screen") {
+        // Munculkan dialog konfirmasi keluar dari website
+        if (dom["site-exit-confirm-modal"]) {
+          dom["site-exit-confirm-modal"].classList.remove("hidden");
+        }
+        try {
+          history.pushState({ screen: "start-screen" }, "", "#menu");
+        } catch (err) {}
+        isNavigatingHistory = false;
+        return;
+      }
+
+      isNavigatingHistory = false;
+    });
+
+    // Event listener beforeunload: konfirmasi browser jika pengguna mencoba reload/tutup tab saat aktif
+    window.addEventListener("beforeunload", (e) => {
+      const isPlaying = !state.isGameOver && !state.isLevelComplete && dom["game-container"] && !dom["game-container"].classList.contains("hidden");
+      const isTeacherHosting = window.MultiplayerModule && window.MultiplayerModule.getRole() === "teacher" && window.MultiplayerModule.getClassPin();
+      if (isPlaying || isTeacherHosting) {
+        e.preventDefault();
+        e.returnValue = "";
+        return "";
+      }
+    });
   }
 
   // ---------------- Init flow ----------------
@@ -170,6 +442,9 @@
     try {
       ["quiz_data", "islamgame_questions_v1", "dreamtown_questions"].forEach(k => localStorage.removeItem(k));
     } catch (e) { /* ignore */ }
+
+    setupNavigationManager();
+    bindTeacherAuthEvents();
 
     runLoadingSequence(() => {
       // Cek apakah ada sesi murid yang bisa di-resume
@@ -262,6 +537,15 @@
   }
 
   function loadAndRestoreTeacherData() {
+    // Keamanan: Hanya pulihkan draf Guru jika terautentikasi dengan PIN Guru
+    if (!isTeacherAuthenticated) {
+      teacherDraftQuestions = [];
+      if (dom["teacher-preview-section"]) dom["teacher-preview-section"].classList.add("hidden");
+      if (dom["teacher-upload-summary"]) dom["teacher-upload-summary"].classList.add("hidden");
+      if (dom["btn-teacher-start"]) dom["btn-teacher-start"].disabled = true;
+      return;
+    }
+
     // 1. Pulihkan draf soal dari localStorage jika teacherDraftQuestions kosong
     if (!teacherDraftQuestions || teacherDraftQuestions.length === 0) {
       try {
@@ -319,13 +603,17 @@
   }
 
   function bindStartScreenEvents() {
-    // Tombol GURU → buka layar Upload Soal
+    // Tombol GURU → verifikasi PIN terlebih dahulu sebelum membuka panel Guru
     dom["btn-mode-teacher"].addEventListener("click", () => {
       window.AudioModule.ensureContext();
       window.AudioModule.playMenuBGM();
 
-      loadAndRestoreTeacherData();
-      showScreen("teacher-upload-screen");
+      if (isTeacherAuthenticated) {
+        loadAndRestoreTeacherData();
+        showScreen("teacher-upload-screen");
+      } else {
+        openTeacherAuthModal();
+      }
     });
 
     // Tombol MURID → buka layar Join (input PIN & nama)
@@ -333,7 +621,6 @@
       window.AudioModule.ensureContext();
       window.AudioModule.playMenuBGM();
 
-      // Selalu arahkan ke layar join PIN & Nama tanpa memblokir di awal
       showScreen("join-screen");
     });
   }
@@ -909,12 +1196,12 @@
     });
 
     dom["btn-shop"].addEventListener("click", openShop);
-    dom["btn-close-shop"].addEventListener("click", () => dom["shop-modal"].classList.add("hidden"));
+    dom["btn-close-shop"].addEventListener("click", () => closeModal("shop-modal"));
 
     dom["btn-multiplayer"].addEventListener("click", () => {
       renderLeaderboard(dom["lb-modal-list"]);
       updateLeaderboardModalControls();
-      dom["leaderboard-modal"].classList.remove("hidden");
+      openModal("leaderboard-modal");
     });
 
     if (dom["btn-clear-lb-modal"]) {
@@ -934,7 +1221,7 @@
       });
     }
 
-    dom["btn-close-lb"].addEventListener("click", () => dom["leaderboard-modal"].classList.add("hidden"));
+    dom["btn-close-lb"].addEventListener("click", () => closeModal("leaderboard-modal"));
 
     dom["btn-restart"].addEventListener("click", () => {
       clearStudentSession(); // restart → hapus sesi
@@ -942,7 +1229,7 @@
     });
 
     dom["btn-goto-town"].addEventListener("click", () => {
-      dom["levelcomplete-modal"].classList.add("hidden");
+      closeModal("levelcomplete-modal");
       openShop();
     });
 
@@ -952,12 +1239,12 @@
     });
 
     dom["btn-rs-town"].addEventListener("click", () => {
-      dom["result-screen-modal"].classList.add("hidden");
+      closeModal("result-screen-modal");
       openShop();
     });
 
     dom["btn-exit"].addEventListener("click", () => {
-      dom["exit-confirm-modal"].classList.remove("hidden");
+      openModal("exit-confirm-modal");
     });
 
     dom["btn-exit-yes"].addEventListener("click", () => {
@@ -966,14 +1253,14 @@
     });
 
     dom["btn-exit-no"].addEventListener("click", () => {
-      dom["exit-confirm-modal"].classList.add("hidden");
+      closeModal("exit-confirm-modal");
     });
   }
 
   function openShop() {
     renderShopItems();
     dom["shop-coin-value"].textContent = state.coins;
-    dom["shop-modal"].classList.remove("hidden");
+    openModal("shop-modal");
   }
 
   function renderShopItems() {
@@ -1150,9 +1437,6 @@
       isCorrect = (chosenIdx === kunciIndex);
     }
 
-    // ── Log Diagnostik Berbasis Indeks Tombol & Kunci Index ──
-    console.log("Index tombol diklik:", chosenIdx, "| Kunci Index Sistem:", kunciIndex, "| Hasil:", isCorrect ? "BENAR" : "SALAH");
-
     if (isCorrect) {
       state.correctCount++;
       btnEl.classList.add("correct");
@@ -1174,10 +1458,7 @@
     } else {
       state.wrongCount++;
       btnEl.classList.add("wrong");
-      // Highlight tombol kunci jawaban jika salah
-      if (typeof kunciIndex === "number" && allBtns[kunciIndex]) {
-        allBtns[kunciIndex].classList.add("correct");
-      }
+      // Jangan sorot tombol kunci jawaban benar agar murid lain tidak menyontek
       state.hp = Math.max(0, state.hp - 20);
       window.AudioModule.playDamageSFX();
       triggerScreenShake();

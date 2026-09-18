@@ -332,13 +332,16 @@
       console.log("[Multiplayer Murid] Bergabung tanpa PIN (Mode Offline/Lokal).");
       let localQuiz = [];
       try {
-        localQuiz = JSON.parse(localStorage.getItem("GAME_QUIZ_DATA") || "[]");
+        const raw = sessionStorage.getItem("STUDENT_ACTIVE_QUIZ") || localStorage.getItem("STUDENT_ACTIVE_QUIZ") || localStorage.getItem("GAME_QUIZ_DATA");
+        localQuiz = raw ? JSON.parse(raw) : [];
       } catch (e) {
         localQuiz = [];
       }
 
       if (localQuiz.length > 0) {
-        if (window.QuestionsModule && typeof window.QuestionsModule.setQuestionsFromPDF === "function") {
+        if (window.QuestionsModule && typeof window.QuestionsModule.setStudentQuestions === "function") {
+          window.QuestionsModule.setStudentQuestions(localQuiz);
+        } else if (window.QuestionsModule && typeof window.QuestionsModule.setQuestionsFromPDF === "function") {
           window.QuestionsModule.setQuestionsFromPDF(localQuiz);
         }
         if (typeof callback === "function") {
@@ -358,11 +361,16 @@
       console.warn("[Firebase Murid] Firebase DB tidak terdeteksi. Mencoba fallback ke cache lokal.");
       let localQuiz = [];
       try {
-        localQuiz = JSON.parse(localStorage.getItem("GAME_QUIZ_DATA") || "[]");
+        const raw = sessionStorage.getItem("STUDENT_ACTIVE_QUIZ") || localStorage.getItem("STUDENT_ACTIVE_QUIZ") || localStorage.getItem("GAME_QUIZ_DATA");
+        localQuiz = raw ? JSON.parse(raw) : [];
       } catch (e) {}
 
       if (localQuiz.length > 0) {
-        if (window.QuestionsModule) window.QuestionsModule.setQuestionsFromPDF(localQuiz);
+        if (window.QuestionsModule && typeof window.QuestionsModule.setStudentQuestions === "function") {
+          window.QuestionsModule.setStudentQuestions(localQuiz);
+        } else if (window.QuestionsModule) {
+          window.QuestionsModule.setQuestionsFromPDF(localQuiz);
+        }
         if (typeof callback === "function") {
           callback({ success: true, count: localQuiz.length, questions: localQuiz, warning: "Firebase offline. Menggunakan soal lokal." });
         }
@@ -426,12 +434,15 @@
 
         console.log("[Firebase Murid] ✅ Berhasil mengunduh", questions.length, "soal dari Guru di PIN:", classPin);
 
-        // Simpan soal ke localStorage & modul pertanyaan
+        // Simpan soal ke sesi Murid secara terisolasi (JANGAN simpan ke GAME_QUIZ_DATA Guru)
         try {
-          localStorage.setItem("GAME_QUIZ_DATA", JSON.stringify(questions));
+          sessionStorage.setItem("STUDENT_ACTIVE_QUIZ", JSON.stringify(questions));
+          localStorage.setItem("STUDENT_ACTIVE_QUIZ", JSON.stringify(questions));
         } catch (e) {}
 
-        if (window.QuestionsModule && typeof window.QuestionsModule.setQuestionsFromPDF === "function") {
+        if (window.QuestionsModule && typeof window.QuestionsModule.setStudentQuestions === "function") {
+          window.QuestionsModule.setStudentQuestions(questions);
+        } else if (window.QuestionsModule && typeof window.QuestionsModule.setQuestionsFromPDF === "function") {
           window.QuestionsModule.setQuestionsFromPDF(questions);
         }
 
