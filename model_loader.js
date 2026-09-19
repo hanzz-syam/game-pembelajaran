@@ -30,75 +30,75 @@
       key: "air_mancur",
       path: "models/air_mancur.glb",
       scale: 1.8,
-      positions: [{ x: 0, y: 0.1, z: 0 }]
+      positions: [{ x: 0, y: 0, z: 0 }]
     },
     {
       key: "bangku",
       path: "models/bangku.glb",
-      scale: 1.4,
+      scale: 1.3,
       positions: [
-        { x:  3, y: 0.05, z:  2 },
-        { x: -3, y: 0.05, z:  2 }
+        { x:  3.5, y: 0, z:  3, ry: 0.4 },
+        { x: -3.5, y: 0, z:  3, ry: -0.4 }
       ]
     },
     {
       key: "cerobong",
       path: "models/cerobong.glb",
-      scale: 1.2,
-      positions: [{ x: -4, y: 0.05, z: -3 }]
+      scale: 1.1,
+      positions: [{ x: -5, y: 0, z: -4 }]
     },
     {
       key: "gazebo",
       path: "models/gazebo.glb",
       scale: 1.5,
-      positions: [{ x: 5, y: 0.05, z: -5 }]
+      positions: [{ x: 6.5, y: 0, z: -5 }]
     },
     {
       key: "jalan",
       path: "models/jalan.glb",
       scale: 2.0,
       positions: [
-        { x: 0, y: 0.02, z:  3 },
-        { x: 0, y: 0.02, z:  0 },
-        { x: 0, y: 0.02, z: -3 }
+        { x: 0, y: 0, z:  4 },
+        { x: 0, y: 0, z:  0 },
+        { x: 0, y: 0, z: -4 }
       ]
     },
     {
       key: "kincir",
       path: "models/kincir.glb",
-      scale: 1.6,
-      positions: [{ x: -6, y: 0.05, z: 4 }]
+      scale: 1.5,
+      positions: [{ x: -7, y: 0, z: 5 }]
     },
     {
       key: "kolam",
       path: "models/kolam.glb",
       scale: 1.5,
-      positions: [{ x: 4, y: 0.05, z: 4 }]
+      positions: [{ x: 5.5, y: 0, z: 5.5 }]
     },
     {
       key: "lampu",
       path: "models/lampu.glb",
       scale: 1.3,
       positions: [
-        { x:  5, y: 0.05, z:  0 },
-        { x: -5, y: 0.05, z:  0 },
-        { x:  0, y: 0.05, z:  6 },
-        { x:  0, y: 0.05, z: -6 }
+        { x:  5,   y: 0, z:  0 },
+        { x: -5,   y: 0, z:  0 },
+        { x:  0,   y: 0, z:  7 },
+        { x:  0,   y: 0, z: -7 }
       ]
     },
     {
       key: "menara_jam",
       path: "models/menara_jam.glb",
       scale: 1.8,
-      positions: [{ x: 0, y: 0.05, z: -7 }]
+      positions: [{ x: 0, y: 0, z: -8 }]
     },
     {
       key: "pagar",
       path: "models/pagar.glb",
       scale: 1.2,
       positions: [
-        { x:  7, y: 0.05, z: 0 },
-        { x: -7, y: 0.05, z: 0 }
+        { x:  8, y: 0, z: 0 },
+        { x: -8, y: 0, z: 0 }
       ]
     },
     {
@@ -106,10 +106,10 @@
       path: "models/pohon_palem.glb",
       scale: 1.4,
       positions: [
-        { x:  6, y: 0.05, z:  6 },
-        { x: -6, y: 0.05, z:  6 },
-        { x:  6, y: 0.05, z: -6 },
-        { x: -6, y: 0.05, z: -6 }
+        { x:  7, y: 0, z:  7 },
+        { x: -7, y: 0, z:  7 },
+        { x:  7, y: 0, z: -7 },
+        { x: -7, y: 0, z: -7 }
       ]
     },
     {
@@ -117,8 +117,8 @@
       path: "models/pohon_pinus.glb",
       scale: 1.3,
       positions: [
-        { x:  8, y: 0.05, z:  2 },
-        { x: -8, y: 0.05, z: -2 }
+        { x:  9, y: 0, z:  2 },
+        { x: -9, y: 0, z: -2 }
       ]
     },
     {
@@ -126,8 +126,8 @@
       path: "models/taman_bunga.glb",
       scale: 1.4,
       positions: [
-        { x:  2, y: 0.05, z: 5 },
-        { x: -2, y: 0.05, z: 5 }
+        { x:  3, y: 0, z: 6.5 },
+        { x: -3, y: 0, z: 6.5 }
       ]
     }
   ];
@@ -228,6 +228,10 @@
     }
   }
 
+  // Offset permukaan pulau kota: rumput ada di group.y + 0.7
+  // Model diposisikan relatif ke group.position, jadi tambahkan 0.7
+  var GROUND_SURFACE_OFFSET = 0.7;
+
   /* ---------- Tempatkan model ke scene ---------- */
   function placeModel(prototype, def) {
     upgradeMaterials(prototype);
@@ -244,9 +248,16 @@
       });
 
       clone.scale.setScalar(def.scale || 1.0);
+
+      /* Hitung bounding box agar bagian bawah model menyentuh permukaan */
+      var bbox = new THREE.Box3().setFromObject(clone);
+      var modelBottomY = bbox.min.y;  // titik terendah model (world space, belum dipindah)
+      // Naikkan model agar kaki tepat di permukaan
+      var snapY = GROUND_SURFACE_OFFSET - modelBottomY + pos.y;
+
       clone.position.set(
         _basePos.x + pos.x,
-        _basePos.y + pos.y,
+        _basePos.y + snapY,
         _basePos.z + pos.z
       );
 

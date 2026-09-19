@@ -44,7 +44,7 @@
       "teacher-upload-screen", "teacher-upload-input", "teacher-upload-status",
       "teacher-upload-summary", "teacher-upload-count", "teacher-preview-section", "teacher-preview-list",
       "teacher-paste-textarea", "btn-process-paste", "teacher-paste-status",
-      "btn-teacher-start", "btn-teacher-upload-back",
+      "btn-teacher-start", "btn-teacher-upload-back", "btn-teacher-resume", "teacher-resume-pin", "btn-teacher-clear-quiz",
       "teacher-screen", "teacher-pin", "btn-new-pin", "btn-clear-leaderboard", "leaderboard-list", "btn-teacher-back",
       "join-screen", "student-name", "student-pin", "btn-join-class", "btn-join-back",
       "game-container", "game-canvas",
@@ -59,12 +59,78 @@
       "result-screen-modal", "rs-player-name", "rs-player-score", "rs-player-rank", 
       "rs-leaderboard-body", "btn-rs-town", "btn-rs-exit",
       "btn-exit", "exit-confirm-modal", "btn-exit-yes", "btn-exit-no",
-      "lm-total", "lm-done", "lm-progress"
+      "lm-total", "lm-done", "lm-progress",
+      "teacher-auth-modal", "teacher-pin-input", "btn-submit-teacher-pin", "btn-cancel-teacher-pin", "teacher-auth-error",
+      "btn-teacher-change-pin", "teacher-change-pin-modal", "teacher-new-pin-input", "btn-save-new-pin", "btn-cancel-new-pin", "teacher-change-pin-status",
+      "site-exit-confirm-modal", "btn-site-exit-yes", "btn-site-exit-no"
     ];
     ids.forEach((id) => (dom[id] = document.getElementById(id)));
   }
 
   let teacherDraftQuestions = [];
+
+  // -------- Student Session Persistence --------
+  const STUDENT_SESSION_KEY = "GAME_STUDENT_SESSION_v1";
+
+  function saveStudentSession() {
+    if (window.MultiplayerModule && window.MultiplayerModule.getRole() !== "student") return;
+    try {
+      const session = {
+        savedAt: Date.now(),
+        name: window.MultiplayerModule ? window.MultiplayerModule.getStudentName() : null,
+        pin: window.MultiplayerModule ? window.MultiplayerModule.getClassPin() : null,
+        hp: state.hp,
+        score: state.score,
+        coins: state.coins,
+        correctCount: state.correctCount,
+        wrongCount: state.wrongCount,
+        questionIndex: state.questionIndex,
+        answeredIslands: Array.from(state.answeredIslands),
+        isGameOver: state.isGameOver,
+        isLevelComplete: state.isLevelComplete
+      };
+      localStorage.setItem(STUDENT_SESSION_KEY, JSON.stringify(session));
+    } catch (e) {}
+  }
+
+  function loadStudentSession() {
+    try {
+      const raw = localStorage.getItem(STUDENT_SESSION_KEY);
+      if (!raw) return null;
+      const s = JSON.parse(raw);
+      // Anggap sesi kedaluwarsa setelah 4 jam
+      if (!s || !s.savedAt || (Date.now() - s.savedAt) > 4 * 60 * 60 * 1000) {
+        localStorage.removeItem(STUDENT_SESSION_KEY);
+        return null;
+      }
+      // Jangan resume jika game sudah selesai
+      if (s.isGameOver || s.isLevelComplete) {
+        localStorage.removeItem(STUDENT_SESSION_KEY);
+        return null;
+      }
+      return s;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function clearStudentSession() {
+    try {
+      localStorage.removeItem(STUDENT_SESSION_KEY);
+    } catch (e) {}
+  }
+
+  function applyStudentSession(session) {
+    state.hp = session.hp;
+    state.score = session.score;
+    state.coins = session.coins;
+    state.correctCount = session.correctCount || 0;
+    state.wrongCount = session.wrongCount || 0;
+    state.questionIndex = session.questionIndex || 0;
+    state.answeredIslands = new Set(session.answeredIslands || []);
+    state.isGameOver = false;
+    state.isLevelComplete = false;
+  }
 
   // ---------------- Loading sequence ----------------
   function runLoadingSequence(callback) {
@@ -89,12 +155,281 @@
     }, 220);
   }
 
+  // -------- Teacher Security & PIN Protection --------
+  const TEACHER_PIN_KEY = "GAME_TEACHER_PIN_v1";
+  let isTeacherAuthenticated = false;
+
+  function getTeacherPin() {
+    return localStorage.getItem(TEACHER_PIN_KEY) || "1234";
+  }
+
+  function setTeacherPin(newPin) {
+    localStorage.setItem(TEACHER_PIN_KEY, newPin);
+  }
+
+  function openTeacherAuthModal() {
+    if (!dom["teacher-auth-modal"]) return;
+    if (dom["teacher-pin-input"]) {
+      dom["teacher-pin-input"].value = "";
+    }
+    if (dom["teacher-auth-error"]) {
+      dom["teacher-auth-error"].textContent = "";
+    }
+    openModal("teacher-auth-modal");
+    setTimeout(() => {
+      if (dom["teacher-pin-input"]) dom["teacher-pin-input"].focus();
+    }, 100);
+  }
+
+  function submitTeacherPin() {
+    const entered = (dom["teacher-pin-input"] ? dom["teacher-pin-input"].value : "").trim();
+    const correctPin = getTeacherPin();
+    if (entered === correctPin) {
+      isTeacherAuthenticated = true;
+      closeModal("teacher-auth-modal");
+      loadAndRestoreTeacherData();
+      showScreen("teacher-upload-screen");
+    } else {
+      if (dom["teacher-auth-error"]) {
+        dom["teacher-auth-error"].textContent = "❌ PIN Guru salah! Silakan periksa kembali.";
+      }
+      if (dom["teacher-pin-input"]) {
+        dom["teacher-pin-input"].value = "";
+        dom["teacher-pin-input"].focus();
+      }
+    }
+  }
+
+  function bindTeacherAuthEvents() {
+    if (dom["btn-submit-teacher-pin"]) {
+      dom["btn-submit-teacher-pin"].addEventListener("click", submitTeacherPin);
+    }
+    if (dom["teacher-pin-input"]) {
+      dom["teacher-pin-input"].addEventListener("keydown", (e) => {
+        if (e.key === "Enter") submitTeacherPin();
+      });
+    }
+    if (dom["btn-cancel-teacher-pin"]) {
+      dom["btn-cancel-teacher-pin"].addEventListener("click", () => {
+        closeModal("teacher-auth-modal");
+      });
+    }
+
+    // Modal Ubah PIN
+    if (dom["btn-teacher-change-pin"]) {
+      dom["btn-teacher-change-pin"].addEventListener("click", () => {
+        if (dom["teacher-new-pin-input"]) dom["teacher-new-pin-input"].value = "";
+        if (dom["teacher-change-pin-status"]) dom["teacher-change-pin-status"].textContent = "";
+        openModal("teacher-change-pin-modal");
+        setTimeout(() => {
+          if (dom["teacher-new-pin-input"]) dom["teacher-new-pin-input"].focus();
+        }, 100);
+      });
+    }
+
+    if (dom["btn-save-new-pin"]) {
+      dom["btn-save-new-pin"].addEventListener("click", () => {
+        const newPin = (dom["teacher-new-pin-input"] ? dom["teacher-new-pin-input"].value : "").trim();
+        if (!newPin || newPin.length < 4) {
+          if (dom["teacher-change-pin-status"]) {
+            dom["teacher-change-pin-status"].textContent = "⚠️ PIN minimal 4 digit/karakter!";
+            dom["teacher-change-pin-status"].style.color = "#ef4444";
+          }
+          return;
+        }
+        setTeacherPin(newPin);
+        if (dom["teacher-change-pin-status"]) {
+          dom["teacher-change-pin-status"].textContent = "✅ PIN Guru berhasil disimpan!";
+          dom["teacher-change-pin-status"].style.color = "#2ea84e";
+        }
+        setTimeout(() => {
+          closeModal("teacher-change-pin-modal");
+        }, 800);
+      });
+    }
+
+    if (dom["btn-cancel-new-pin"]) {
+      dom["btn-cancel-new-pin"].addEventListener("click", () => {
+        closeModal("teacher-change-pin-modal");
+      });
+    }
+
+    // Modal Konfirmasi Keluar Website
+    if (dom["btn-site-exit-yes"]) {
+      dom["btn-site-exit-yes"].addEventListener("click", () => {
+        closeModal("site-exit-confirm-modal");
+        try {
+          window.history.go(-2);
+        } catch (e) {
+          window.close();
+        }
+      });
+    }
+
+    if (dom["btn-site-exit-no"]) {
+      dom["btn-site-exit-no"].addEventListener("click", () => {
+        closeModal("site-exit-confirm-modal");
+      });
+    }
+  }
+
+  // -------- Navigation & History Manager (Anti-Exit & Hash Routing) --------
+  const SCREEN_ROUTES = {
+    "start-screen": "#menu",
+    "teacher-upload-screen": "#guru-upload",
+    "teacher-screen": "#guru-pantau",
+    "join-screen": "#gabung",
+    "game-container": "#main"
+  };
+
+  let currentScreenId = "start-screen";
+  let isNavigatingHistory = false;
+
+  function getOpenModal() {
+    const modalIds = [
+      "site-exit-confirm-modal",
+      "teacher-auth-modal",
+      "teacher-change-pin-modal",
+      "shop-modal",
+      "leaderboard-modal",
+      "exit-confirm-modal",
+      "gameover-modal",
+      "levelcomplete-modal",
+      "result-screen-modal"
+    ];
+    for (const id of modalIds) {
+      if (dom[id] && !dom[id].classList.contains("hidden")) {
+        return id;
+      }
+    }
+    return null;
+  }
+
+  function closeAllModals() {
+    const modalIds = [
+      "site-exit-confirm-modal",
+      "teacher-auth-modal",
+      "teacher-change-pin-modal",
+      "shop-modal",
+      "leaderboard-modal",
+      "exit-confirm-modal"
+    ];
+    modalIds.forEach((id) => {
+      if (dom[id]) dom[id].classList.add("hidden");
+    });
+  }
+
+  function openModal(id) {
+    if (dom[id]) {
+      dom[id].classList.remove("hidden");
+      if (!isNavigatingHistory) {
+        try {
+          history.pushState({ screen: currentScreenId, modal: id }, "", window.location.hash);
+        } catch (e) {}
+      }
+    }
+  }
+
+  function closeModal(id) {
+    if (dom[id]) {
+      dom[id].classList.add("hidden");
+    }
+  }
+
   // ---------------- Screen management ----------------
-  function showScreen(id) {
+  function showScreen(id, updateHistory = true) {
     ["loading-screen", "start-screen", "teacher-upload-screen", "teacher-screen", "join-screen", "game-container"].forEach((s) => {
       if (dom[s]) dom[s].classList.add("hidden");
     });
     if (dom[id]) dom[id].classList.remove("hidden");
+    currentScreenId = id;
+
+    // Tutup modal yang tidak relevan saat layar berganti
+    closeAllModals();
+
+    if (updateHistory && !isNavigatingHistory && id !== "loading-screen") {
+      const hash = SCREEN_ROUTES[id] || "#menu";
+      try {
+        if (window.location.hash !== hash) {
+          history.pushState({ screen: id }, "", hash);
+        } else {
+          history.replaceState({ screen: id }, "", hash);
+        }
+      } catch (e) {}
+    }
+  }
+
+  function setupNavigationManager() {
+    // Set rute awal saat aplikasi dibuka
+    try {
+      history.replaceState({ screen: "start-screen" }, "", "#menu");
+    } catch (e) {}
+
+    // Event listener popstate (Tombol Back browser / Gesture Back HP)
+    window.addEventListener("popstate", (e) => {
+      isNavigatingHistory = true;
+
+      // 1. Jika ada modal yang terbuka: tutup modal tersebut, tetap di layar saat ini
+      const openModalId = getOpenModal();
+      if (openModalId) {
+        closeModal(openModalId);
+        const currentHash = SCREEN_ROUTES[currentScreenId] || "#menu";
+        try {
+          history.pushState({ screen: currentScreenId }, "", currentHash);
+        } catch (err) {}
+        isNavigatingHistory = false;
+        return;
+      }
+
+      // 2. Jika sedang di dalam game (#main / game-container)
+      if (currentScreenId === "game-container") {
+        // Tampilkan modal konfirmasi keluar game, jangan langsung keluar dari web
+        if (dom["exit-confirm-modal"]) {
+          dom["exit-confirm-modal"].classList.remove("hidden");
+        }
+        try {
+          history.pushState({ screen: "game-container" }, "", "#main");
+        } catch (err) {}
+        isNavigatingHistory = false;
+        return;
+      }
+
+      // 3. Jika sedang di layar sub-menu (Upload Guru, Pantau Guru, Join Murid)
+      if (currentScreenId === "teacher-upload-screen" || currentScreenId === "teacher-screen" || currentScreenId === "join-screen") {
+        showScreen("start-screen", false);
+        try {
+          history.pushState({ screen: "start-screen" }, "", "#menu");
+        } catch (err) {}
+        isNavigatingHistory = false;
+        return;
+      }
+
+      // 4. Jika sedang di Menu Utama (start-screen / #menu)
+      if (currentScreenId === "start-screen") {
+        // Munculkan dialog konfirmasi keluar dari website
+        if (dom["site-exit-confirm-modal"]) {
+          dom["site-exit-confirm-modal"].classList.remove("hidden");
+        }
+        try {
+          history.pushState({ screen: "start-screen" }, "", "#menu");
+        } catch (err) {}
+        isNavigatingHistory = false;
+        return;
+      }
+
+      isNavigatingHistory = false;
+    });
+
+    // Event listener beforeunload: konfirmasi browser jika pengguna mencoba reload/tutup tab saat aktif
+    window.addEventListener("beforeunload", (e) => {
+      const isPlaying = !state.isGameOver && !state.isLevelComplete && dom["game-container"] && !dom["game-container"].classList.contains("hidden");
+      const isTeacherHosting = window.MultiplayerModule && window.MultiplayerModule.getRole() === "teacher" && window.MultiplayerModule.getClassPin();
+      if (isPlaying || isTeacherHosting) {
+        e.preventDefault();
+        e.returnValue = "";
+        return "";
+      }
+    });
   }
 
   // ---------------- Init flow ----------------
@@ -108,9 +443,18 @@
       ["quiz_data", "islamgame_questions_v1", "dreamtown_questions"].forEach(k => localStorage.removeItem(k));
     } catch (e) { /* ignore */ }
 
+    setupNavigationManager();
+    bindTeacherAuthEvents();
+
     runLoadingSequence(() => {
-      showScreen("start-screen");
-      window.AudioModule.playMenuBGM();
+      // Cek apakah ada sesi murid yang bisa di-resume
+      const savedSession = loadStudentSession();
+      if (savedSession) {
+        showResumeStudentPrompt(savedSession);
+      } else {
+        showScreen("start-screen");
+        window.AudioModule.playMenuBGM();
+      }
     });
 
     bindStartScreenEvents();
@@ -119,38 +463,157 @@
     bindJoinScreenEvents();
   }
 
-  function bindStartScreenEvents() {
-    // Tombol GURU → buka layar Upload Soal
-    dom["btn-mode-teacher"].addEventListener("click", () => {
+  function showResumeStudentPrompt(session) {
+    // Hapus overlay lama jika ada
+    const existing = document.getElementById("resume-overlay");
+    if (existing) existing.remove();
+
+    const overlay = document.createElement("div");
+    overlay.id = "resume-overlay";
+    overlay.className = "screen-overlay";
+    overlay.style.cssText = "position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(10,15,35,0.85);z-index:9999;";
+
+    const minsAgo = Math.round((Date.now() - session.savedAt) / 60000);
+    const timeStr = minsAgo < 1 ? "baru saja" : minsAgo + " menit lalu";
+
+    overlay.innerHTML = `
+      <div class="glass" style="max-width:420px;width:90%;padding:32px 28px;text-align:center;border-radius:20px;">
+        <div style="font-size:48px;margin-bottom:12px;">🎮</div>
+        <h2 style="color:#1e3054;margin-bottom:8px;">Lanjutkan Permainan?</h2>
+        <p style="color:#475569;margin-bottom:6px;">Sesi terakhir ditemukan (<strong>${escapeHtml(session.name || 'Murid')}</strong>, ${timeStr})</p>
+        <p style="color:#475569;margin-bottom:20px;">Skor: <strong>${session.score}</strong> &nbsp;|&nbsp; HP: <strong>${session.hp}</strong> &nbsp;|&nbsp; Soal ke-<strong>${session.questionIndex + 1}</strong></p>
+        <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
+          <button id="btn-resume-yes" class="btn-3d btn-green">▶️ Lanjutkan</button>
+          <button id="btn-resume-no" class="btn-3d btn-red btn-small">🔄 Mulai Baru</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    document.getElementById("btn-resume-yes").addEventListener("click", () => {
+      overlay.remove();
       window.AudioModule.ensureContext();
       window.AudioModule.playMenuBGM();
 
-      // Kosongkan draf soal lokal TAPI jangan hapus GAME_QUIZ_DATA
-      // agar Guru bisa lihat soal lama sambil menyiapkan yang baru
-      teacherDraftQuestions = [];
+      // Pulihkan state dari sesi tersimpan
+      applyStudentSession(session);
 
-      // Reset File Input
-      if (dom["teacher-upload-input"]) dom["teacher-upload-input"].value = "";
-
-      // Reset Paste Textarea
-      if (dom["teacher-paste-textarea"]) dom["teacher-paste-textarea"].value = "";
-      if (dom["teacher-paste-status"]) {
-        dom["teacher-paste-status"].textContent = "";
-        dom["teacher-paste-status"].style.color = "#64748b";
+      // Pastikan soal terbaca dari localStorage
+      if (session.pin) {
+        // Jika ada PIN, coba re-join (soal sudah ada di localStorage)
+        const localQuiz = JSON.parse(localStorage.getItem("GAME_QUIZ_DATA") || "[]");
+        if (localQuiz.length > 0 && window.QuestionsModule) {
+          window.QuestionsModule.setQuestionsFromPDF(localQuiz);
+        }
+        // Re-daftarkan murid ke Firebase dengan nama & PIN yang sama
+        if (window.MultiplayerModule) {
+          window.MultiplayerModule.connectAndJoin(session.name, session.pin, (res) => {
+            if (res && res.success) {
+              startGame();
+            } else {
+              // Fallback: mulai game dengan soal lokal yang ada
+              startGame();
+            }
+          });
+        } else {
+          startGame();
+        }
+      } else {
+        // Mode offline / tanpa PIN
+        if (window.MultiplayerModule) {
+          window.MultiplayerModule.joinAsStudent(session.name || "Murid", "");
+        }
+        startGame();
       }
+    });
 
-      // Sembunyikan Preview & Ringkasan, Matikan Tombol Mulai Game
+    document.getElementById("btn-resume-no").addEventListener("click", () => {
+      clearStudentSession();
+      overlay.remove();
+      showScreen("start-screen");
+      window.AudioModule.ensureContext();
+      window.AudioModule.playMenuBGM();
+    });
+  }
+
+  function loadAndRestoreTeacherData() {
+    // Keamanan: Hanya pulihkan draf Guru jika terautentikasi dengan PIN Guru
+    if (!isTeacherAuthenticated) {
+      teacherDraftQuestions = [];
       if (dom["teacher-preview-section"]) dom["teacher-preview-section"].classList.add("hidden");
       if (dom["teacher-upload-summary"]) dom["teacher-upload-summary"].classList.add("hidden");
       if (dom["btn-teacher-start"]) dom["btn-teacher-start"].disabled = true;
+      return;
+    }
 
-      // Status Indikator Abu-Abu
+    // 1. Pulihkan draf soal dari localStorage jika teacherDraftQuestions kosong
+    if (!teacherDraftQuestions || teacherDraftQuestions.length === 0) {
+      try {
+        const saved = localStorage.getItem("GAME_QUIZ_DATA");
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            teacherDraftQuestions = parsed;
+            if (window.QuestionsModule && typeof window.QuestionsModule.setQuestionsFromPDF === "function") {
+              window.QuestionsModule.setQuestionsFromPDF(parsed);
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("[Teacher] Gagal membaca GAME_QUIZ_DATA dari localStorage:", e);
+      }
+    }
+
+    // 2. Pulihkan teks paste yang tersimpan
+    try {
+      const savedText = localStorage.getItem("TEACHER_PASTE_TEXT");
+      if (savedText && dom["teacher-paste-textarea"]) {
+        dom["teacher-paste-textarea"].value = savedText;
+      }
+    } catch (e) {}
+
+    // 3. Tampilkan soal jika ada yang tersimpan di browser
+    if (teacherDraftQuestions && teacherDraftQuestions.length > 0) {
+      dom["teacher-upload-count"].textContent = "Tersimpan di browser: " + teacherDraftQuestions.length + " soal";
+      dom["teacher-upload-summary"].classList.remove("hidden");
+      dom["teacher-upload-status"].textContent = "✅ " + teacherDraftQuestions.length + " soal tersimpan di browser siap digunakan.";
+      dom["teacher-upload-status"].style.color = "#2ea84e";
+      renderTeacherPreview(teacherDraftQuestions);
+      if (dom["btn-teacher-start"]) dom["btn-teacher-start"].disabled = false;
+      if (dom["btn-teacher-clear-quiz"]) dom["btn-teacher-clear-quiz"].classList.remove("hidden");
+    } else {
+      if (dom["teacher-preview-section"]) dom["teacher-preview-section"].classList.add("hidden");
+      if (dom["teacher-upload-summary"]) dom["teacher-upload-summary"].classList.add("hidden");
+      if (dom["btn-teacher-start"]) dom["btn-teacher-start"].disabled = true;
+      if (dom["btn-teacher-clear-quiz"]) dom["btn-teacher-clear-quiz"].classList.add("hidden");
       if (dom["teacher-upload-status"]) {
         dom["teacher-upload-status"].textContent = "Belum ada file soal yang dipilih";
         dom["teacher-upload-status"].style.color = "#64748b";
       }
+    }
 
-      showScreen("teacher-upload-screen");
+    // 4. Periksa apakah ada sesi kelas aktif
+    const activePin = window.MultiplayerModule ? window.MultiplayerModule.getClassPin() : null;
+    if (activePin && dom["btn-teacher-resume"]) {
+      if (dom["teacher-resume-pin"]) dom["teacher-resume-pin"].textContent = activePin;
+      dom["btn-teacher-resume"].classList.remove("hidden");
+    } else if (dom["btn-teacher-resume"]) {
+      dom["btn-teacher-resume"].classList.add("hidden");
+    }
+  }
+
+  function bindStartScreenEvents() {
+    // Tombol GURU → verifikasi PIN terlebih dahulu sebelum membuka panel Guru
+    dom["btn-mode-teacher"].addEventListener("click", () => {
+      window.AudioModule.ensureContext();
+      window.AudioModule.playMenuBGM();
+
+      if (isTeacherAuthenticated) {
+        loadAndRestoreTeacherData();
+        showScreen("teacher-upload-screen");
+      } else {
+        openTeacherAuthModal();
+      }
     });
 
     // Tombol MURID → buka layar Join (input PIN & nama)
@@ -158,7 +621,6 @@
       window.AudioModule.ensureContext();
       window.AudioModule.playMenuBGM();
 
-      // Selalu arahkan ke layar join PIN & Nama tanpa memblokir di awal
       showScreen("join-screen");
     });
   }
@@ -255,6 +717,14 @@
             else b.classList.remove("active");
           });
 
+          // Simpan segera ke localStorage & QuestionsModule
+          try {
+            localStorage.setItem("GAME_QUIZ_DATA", JSON.stringify(teacherDraftQuestions));
+            if (window.QuestionsModule && typeof window.QuestionsModule.setQuestionsFromPDF === "function") {
+              window.QuestionsModule.setQuestionsFromPDF(teacherDraftQuestions);
+            }
+          } catch (e) {}
+
           console.log(`[TeacherEdit] Soal #${qIdx + 1} kunci diubah ke: ${letter} (Index ${optIdx})`);
         });
 
@@ -291,10 +761,14 @@
       if (result.success) {
         // Ambil soal yang baru ter-parse
         teacherDraftQuestions = window.QuestionsModule ? JSON.parse(JSON.stringify(window.QuestionsModule.getQuestions())) : [];
+        try {
+          localStorage.setItem("GAME_QUIZ_DATA", JSON.stringify(teacherDraftQuestions));
+        } catch (e) {}
         
         // Tampilkan ringkasan & daftar preview soal
         dom["teacher-upload-count"].textContent = "Berhasil memuat " + result.count + " soal";
         dom["teacher-upload-summary"].classList.remove("hidden");
+        if (dom["btn-teacher-clear-quiz"]) dom["btn-teacher-clear-quiz"].classList.remove("hidden");
         
         // Render preview & edit kunci
         renderTeacherPreview(teacherDraftQuestions);
@@ -366,9 +840,15 @@
       // Update teacherDraftQuestions
       teacherDraftQuestions = window.QuestionsModule ? JSON.parse(JSON.stringify(window.QuestionsModule.getQuestions())) : parsed.slice();
 
+      // Simpan teks mentah paste agar tidak hilang saat navigasi
+      try {
+        localStorage.setItem("TEACHER_PASTE_TEXT", rawText);
+      } catch (e) {}
+
       // Tampilkan ringkasan & preview
       dom["teacher-upload-count"].textContent = "Berhasil memuat " + parsed.length + " soal dari teks";
       dom["teacher-upload-summary"].classList.remove("hidden");
+      if (dom["btn-teacher-clear-quiz"]) dom["btn-teacher-clear-quiz"].classList.remove("hidden");
       renderTeacherPreview(teacherDraftQuestions);
 
       // Aktifkan tombol mulai game
@@ -383,6 +863,48 @@
       console.log("[TeacherPaste] ✅ Berhasil memproses", parsed.length, "soal dari teks paste.");
     });
 
+    // Auto-simpan teks paste saat diketik
+    if (dom["teacher-paste-textarea"]) {
+      dom["teacher-paste-textarea"].addEventListener("input", () => {
+        try {
+          localStorage.setItem("TEACHER_PASTE_TEXT", dom["teacher-paste-textarea"].value);
+        } catch (e) {}
+      });
+    }
+
+    // Tombol Resume Sesi (Lanjut Pantau Murid dengan PIN aktif)
+    if (dom["btn-teacher-resume"]) {
+      dom["btn-teacher-resume"].addEventListener("click", () => {
+        const pin = window.MultiplayerModule ? window.MultiplayerModule.resumeTeacherSession() : null;
+        if (pin) {
+          dom["teacher-pin"].textContent = pin;
+          renderLeaderboard(dom["leaderboard-list"]);
+          window.MultiplayerModule.subscribeLeaderboard(() => renderLeaderboard(dom["leaderboard-list"]));
+          showScreen("teacher-screen");
+        }
+      });
+    }
+
+    // Tombol Hapus Soal Tersimpan
+    if (dom["btn-teacher-clear-quiz"]) {
+      dom["btn-teacher-clear-quiz"].addEventListener("click", () => {
+        if (confirm("Apakah Anda yakin ingin menghapus semua soal yang tersimpan di browser?")) {
+          teacherDraftQuestions = [];
+          try {
+            localStorage.removeItem("GAME_QUIZ_DATA");
+            localStorage.removeItem("TEACHER_PASTE_TEXT");
+          } catch (e) {}
+          if (window.QuestionsModule && typeof window.QuestionsModule.resetToFallback === "function") {
+            window.QuestionsModule.resetToFallback();
+          }
+          if (dom["teacher-upload-input"]) dom["teacher-upload-input"].value = "";
+          if (dom["teacher-paste-textarea"]) dom["teacher-paste-textarea"].value = "";
+          if (dom["teacher-paste-status"]) dom["teacher-paste-status"].textContent = "";
+          loadAndRestoreTeacherData();
+        }
+      });
+    }
+
     // Tombol kembali → ke role menu
     dom["btn-teacher-upload-back"].addEventListener("click", () => {
       showScreen("start-screen");
@@ -391,7 +913,7 @@
 
   function bindTeacherScreenEvents() {
     dom["btn-new-pin"].addEventListener("click", () => {
-      const pin = window.MultiplayerModule.regeneratePin();
+      const pin = window.MultiplayerModule.regeneratePin(teacherDraftQuestions);
       dom["teacher-pin"].textContent = pin;
     });
 
@@ -447,7 +969,7 @@
   }
 
   function openTeacherDashboard() {
-    const pin = window.MultiplayerModule.startTeacherSession();
+    const pin = window.MultiplayerModule.startTeacherSession(teacherDraftQuestions);
     dom["teacher-pin"].textContent = pin;
     renderLeaderboard(dom["leaderboard-list"]);
     window.MultiplayerModule.subscribeLeaderboard(() => renderLeaderboard(dom["leaderboard-list"]));
@@ -674,12 +1196,12 @@
     });
 
     dom["btn-shop"].addEventListener("click", openShop);
-    dom["btn-close-shop"].addEventListener("click", () => dom["shop-modal"].classList.add("hidden"));
+    dom["btn-close-shop"].addEventListener("click", () => closeModal("shop-modal"));
 
     dom["btn-multiplayer"].addEventListener("click", () => {
       renderLeaderboard(dom["lb-modal-list"]);
       updateLeaderboardModalControls();
-      dom["leaderboard-modal"].classList.remove("hidden");
+      openModal("leaderboard-modal");
     });
 
     if (dom["btn-clear-lb-modal"]) {
@@ -699,43 +1221,46 @@
       });
     }
 
-    dom["btn-close-lb"].addEventListener("click", () => dom["leaderboard-modal"].classList.add("hidden"));
+    dom["btn-close-lb"].addEventListener("click", () => closeModal("leaderboard-modal"));
 
     dom["btn-restart"].addEventListener("click", () => {
+      clearStudentSession(); // restart → hapus sesi
       window.location.reload();
     });
 
     dom["btn-goto-town"].addEventListener("click", () => {
-      dom["levelcomplete-modal"].classList.add("hidden");
+      closeModal("levelcomplete-modal");
       openShop();
     });
 
     dom["btn-rs-exit"].addEventListener("click", () => {
+      clearStudentSession(); // keluar dari layar hasil → hapus sesi
       window.location.reload();
     });
 
     dom["btn-rs-town"].addEventListener("click", () => {
-      dom["result-screen-modal"].classList.add("hidden");
+      closeModal("result-screen-modal");
       openShop();
     });
 
     dom["btn-exit"].addEventListener("click", () => {
-      dom["exit-confirm-modal"].classList.remove("hidden");
+      openModal("exit-confirm-modal");
     });
 
     dom["btn-exit-yes"].addEventListener("click", () => {
+      clearStudentSession(); // keluar sengaja → hapus sesi
       window.location.reload();
     });
 
     dom["btn-exit-no"].addEventListener("click", () => {
-      dom["exit-confirm-modal"].classList.add("hidden");
+      closeModal("exit-confirm-modal");
     });
   }
 
   function openShop() {
     renderShopItems();
     dom["shop-coin-value"].textContent = state.coins;
-    dom["shop-modal"].classList.remove("hidden");
+    openModal("shop-modal");
   }
 
   function renderShopItems() {
@@ -912,9 +1437,6 @@
       isCorrect = (chosenIdx === kunciIndex);
     }
 
-    // ── Log Diagnostik Berbasis Indeks Tombol & Kunci Index ──
-    console.log("Index tombol diklik:", chosenIdx, "| Kunci Index Sistem:", kunciIndex, "| Hasil:", isCorrect ? "BENAR" : "SALAH");
-
     if (isCorrect) {
       state.correctCount++;
       btnEl.classList.add("correct");
@@ -936,10 +1458,7 @@
     } else {
       state.wrongCount++;
       btnEl.classList.add("wrong");
-      // Highlight tombol kunci jawaban jika salah
-      if (typeof kunciIndex === "number" && allBtns[kunciIndex]) {
-        allBtns[kunciIndex].classList.add("correct");
-      }
+      // Jangan sorot tombol kunci jawaban benar agar murid lain tidak menyontek
       state.hp = Math.max(0, state.hp - 20);
       window.AudioModule.playDamageSFX();
       triggerScreenShake();
@@ -949,6 +1468,9 @@
     if (window.MultiplayerModule && typeof window.MultiplayerModule.updateLiveProgress === "function") {
       window.MultiplayerModule.updateLiveProgress(state.correctCount, state.wrongCount, islandIndex + 1, state.questions.length, false, state.score);
     }
+
+    // Simpan progres sesi murid ke browser agar bisa di-resume jika refresh
+    saveStudentSession();
 
     updateHUD();
 
@@ -1021,6 +1543,7 @@
       window.MultiplayerModule.updateLiveProgress(state.correctCount, state.wrongCount, state.questions.length, state.questions.length, true, state.score);
     }
     state.isGameOver = true;
+    clearStudentSession(); // game selesai → hapus sesi
     window.AudioModule.stopBGM();
     window.AudioModule.playGameOverSFX();
     saveToLeaderboardAndShowResult();
@@ -1032,6 +1555,7 @@
     }
     if (state.isLevelComplete) return;
     state.isLevelComplete = true;
+    clearStudentSession(); // level selesai → hapus sesi
     saveToLeaderboardAndShowResult();
   }
 

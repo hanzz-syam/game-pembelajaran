@@ -1,31 +1,57 @@
 /* =========================================================
    multiplayer.js
-   Sistem "multiplayer kelas" berbasis Client & PeerJS (WebRTC P2P):
-   - Guru membuat Lobby dengan PIN & memantau papan peringkat.
-   - P2P PeerJS otomatis mengirimkan bank soal (GAME_QUIZ_DATA)
-     dari Device 1 (Guru) ke Device 2 (Murid) saat Murid memasukkan PIN.
-   - Sinkronisasi nilai & progress murid ter-update secara real-time
-     ke HP/Laptop Guru via PeerJS DataConnection + BroadcastChannel.
+   Sistem Sinkronisasi Kelas & Papan Peringkat Real-time
+   Menggunakan Firebase Realtime Database:
+   - 100% kompatibel dengan hosting statis Netlify (tanpa server khusus).
+   - Sinkronisasi instan bank soal dari Guru ke Murid lintas perangkat (iOS/Android/PC).
+   - Live Leaderboard Guru auto-update saat murid menjawab soal.
    ========================================================= */
 
 (function () {
   "use strict";
 
   const STORAGE_KEY = "psk_islam_classroom_v1";
+  const LIVE_MONITOR_KEY = "GAME_LIVE_MONITOR";
   const CHANNEL_NAME = "psk_islam_classroom_channel";
 
   let channel = null;
-  let currentRole = null; // 'teacher' | 'student'
+  let currentRole = "student"; // 'teacher' | 'student'
   let studentId = null;
   let studentName = null;
+  let studentKey = null;
   let classPin = null;
+  try {
+    const savedClass = readClassroomData();
+    if (savedClass && savedClass.pin) {
+      classPin = savedClass.pin;
+    }
+  } catch (e) {}
   let onLeaderboardUpdate = null;
 
-  // State PeerJS (WebRTC P2P)
-  let teacherPeer = null;
-  let studentPeer = null;
-  let activeConnections = [];
-  let studentConn = null;
+  // Firebase References
+  let teacherRoomRef = null;
+  let studentsListenerRef = null;
+  let studentProgressRef = null;
+
+  function getDb() {
+    if (window._firebaseDb) return window._firebaseDb;
+    if (typeof window.getFirebaseDb === "function") {
+      return window.getFirebaseDb();
+    }
+    if (typeof window.firebase !== "undefined" && typeof window.firebase.database === "function") {
+      window._firebaseDb = window.firebase.database();
+      return window._firebaseDb;
+    }
+    return null;
+  }
+
+  function sanitizeKey(str) {
+    return String(str || "student")
+      .replace(/[.#$\[\]\/]/g, "_")
+      .replace(/\s+/g, "_")
+      .trim()
+      .slice(0, 32);
+  }
 
   function hasBroadcastChannel() {
     return typeof BroadcastChannel !== "undefined";
@@ -41,7 +67,9 @@
       };
     }
     window.addEventListener("storage", (e) => {
-      if (e.key === STORAGE_KEY || e.key === "GAME_LIVE_MONITOR") notifyLeaderboardUpdate();
+      if (e.key === STORAGE_KEY || e.key === LIVE_MONITOR_KEY) {
+        notifyLeaderboardUpdate();
+      }
     });
   }
 
@@ -56,15 +84,35 @@
   }
 
   function writeClassroomData(data) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-    if (channel) {
-      channel.postMessage({ type: "leaderboard-update" });
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      if (channel) {
+        channel.postMessage({ type: "leaderboard-update" });
+      }
+    } catch (e) {}
+  }
+
+  function readLiveMonitorData() {
+    try {
+      const raw = localStorage.getItem(LIVE_MONITOR_KEY);
+      return raw ? JSON.parse(raw) : {};
+    } catch (e) {
+      return {};
     }
   }
 
-  function notifyLeaderboardUpdate() {
+  function writeLiveMonitorData(data) {
+    try {
+      localStorage.setItem(LIVE_MONITOR_KEY, JSON.stringify(data));
+      if (channel) {
+        channel.postMessage({ type: "leaderboard-update" });
+      }
+    } catch (e) {}
+  }
+
+  function notifyLeaderboardUpdate(list) {
     if (typeof onLeaderboardUpdate === "function") {
-      onLeaderboardUpdate(getLeaderboard());
+      onLeaderboardUpdate(list || getLiveMonitorList());
     }
   }
 
@@ -72,118 +120,186 @@
     return String(Math.floor(100000 + Math.random() * 900000));
   }
 
-  // -------------------- PeerJS Teacher Host --------------------
-  function initTeacherPeerHost(pin) {
-    if (typeof window.Peer === "undefined") {
-      console.warn("[PeerJS Guru] Library PeerJS tidak ditemukan.");
-      return;
+  // Batas waktu room dianggap kedaluwarsa: 8 jam
+  const ROOM_MAX_AGE_MS = 8 * 60 * 60 * 1000;
+
+  function cleanupStaleRooms() {
+    const db = getDb();
+    if (!db) return;
+    const cutoff = Date.now() - ROOM_MAX_AGE_MS;
+    db.ref("rooms").once("value")
+      .then((snapshot) => {
+        if (!snapshot.exists()) return;
+        const rooms = snapshot.val() || {};
+        const batch = [];
+        Object.entries(rooms).forEach(([pin, room]) => {
+          const createdAt = room && room.createdAt ? room.createdAt : 0;
+          const isActive = room && room.active === true;
+          // Hapus: room tidak aktif ATAU sudah lebih dari batas usia
+          if (!isActive || createdAt < cutoff) {
+            batch.push(db.ref("rooms/" + pin).remove());
+          }
+        });
+        if (batch.length > 0) {
+          Promise.all(batch).then(() => {
+            console.log("[Firebase] 🧹 Berhasil menghapus", batch.length, "room kedaluwarsa.");
+          }).catch(err => console.warn("[Firebase] Gagal menghapus room lama:", err));
+        }
+      })
+      .catch(err => console.warn("[Firebase] cleanupStaleRooms error:", err));
+  }
+
+  // -------------------- Guru (Teacher) Session --------------------
+  function startTeacherSession(customQuestions) {
+    initChannel();
+    currentRole = "teacher";
+
+    // Bersihkan listener lama jika ada
+    cleanupTeacherListeners();
+
+    // Hapus room Firebase yang sudah kedaluwarsa sebelum membuat sesi baru
+    cleanupStaleRooms();
+
+    classPin = generatePin();
+    console.log("[Firebase Guru] Membuka sesi kelas dengan PIN:", classPin);
+
+    // Ambil bank soal terkini
+    let questions = [];
+    if (Array.isArray(customQuestions) && customQuestions.length > 0) {
+      questions = customQuestions;
+    } else if (window.QuestionsModule && typeof window.QuestionsModule.getQuestions === "function") {
+      questions = window.QuestionsModule.getQuestions();
+    }
+    if ((!questions || questions.length === 0)) {
+      try {
+        questions = JSON.parse(localStorage.getItem("GAME_QUIZ_DATA") || "[]");
+      } catch (e) {
+        questions = [];
+      }
     }
 
-    try {
-      if (teacherPeer) {
-        teacherPeer.destroy();
-      }
+    // Simpan ke storage lokal
+    const classroomData = readClassroomData();
+    classroomData.pin = classPin;
+    classroomData.students = {};
+    writeClassroomData(classroomData);
+    clearLiveMonitor();
 
-      const peerId = "psk_room_" + pin;
-      console.log("[PeerJS Guru] Menginisialisasi Host Peer dengan ID:", peerId);
-      teacherPeer = new window.Peer(peerId);
+    // Simpan ke Firebase Realtime Database
+    const db = getDb();
+    if (db) {
+      teacherRoomRef = db.ref("rooms/" + classPin);
+      
+      const roomPayload = {
+        pin: classPin,
+        active: true,
+        createdAt: Date.now(),
+        questionCount: questions.length,
+        questions: questions
+      };
 
-      teacherPeer.on("open", (id) => {
-        console.log("[PeerJS Guru] Host Room Peer aktif dengan ID:", id);
-      });
-
-      teacherPeer.on("connection", (conn) => {
-        console.log("[PeerJS Guru] Murid terhubung dari peranti lain:", conn.peer);
-        activeConnections.push(conn);
-
-        conn.on("data", (data) => {
-          if (data && data.type === "REQUEST_QUIZ") {
-            console.log("[PeerJS Guru] Menerima permintaan soal dari murid:", data.name);
-            const quizData = JSON.parse(localStorage.getItem("GAME_QUIZ_DATA") || "[]");
-            conn.send({
-              type: "QUIZ_DATA",
-              questions: quizData,
-              pin: classPin
-            });
-          } else if (data && data.type === "LIVE_PROGRESS") {
-            console.log("[PeerJS Guru] Menerima progress nilai murid:", data.name, data.score);
-            const liveData = readLiveMonitorData();
-            liveData[data.name] = {
-              name: data.name,
-              currentQuestion: data.currentQuestion,
-              totalQuestions: data.totalQuestions,
-              correct: data.correct,
-              wrong: data.wrong,
-              status: data.status,
-              score: data.score,
-              lastUpdated: Date.now()
-            };
-            writeLiveMonitorData(liveData);
-            notifyLeaderboardUpdate();
+      teacherRoomRef.set(roomPayload)
+        .then(() => {
+          console.log("[Firebase Guru] ✅ Berhasil mengunggah", questions.length, "soal ke Firebase Room:", classPin);
+        })
+        .catch((err) => {
+          console.error("[Firebase Guru] ❌ Gagal mengunggah soal ke Firebase:", err);
+          if (err.code === "PERMISSION_DENIED" || (err.message && err.message.toLowerCase().includes("permission_denied"))) {
+            console.warn("[Firebase Guru] ⚠️ PERMISSION DENIED: Pastikan Rules di Firebase Console sudah diatur ke { \".read\": true, \".write\": true }");
           }
         });
 
-        conn.on("close", () => {
-          activeConnections = activeConnections.filter(c => c !== conn);
-        });
-
-        conn.on("error", (err) => {
-          console.warn("[PeerJS Guru] Error koneksi client:", err);
-        });
+      // Pasang listener realtime untuk daftar & progres murid
+      studentsListenerRef = db.ref("rooms/" + classPin + "/students");
+      studentsListenerRef.on("value", (snapshot) => {
+        const val = snapshot.val() || {};
+        const studentList = Object.values(val).sort((a, b) => (b.score || 0) - (a.score || 0));
+        console.log("[Firebase Guru] 📡 Update progres murid diterima:", studentList.length, "murid");
+        writeLiveMonitorData(val);
+        notifyLeaderboardUpdate(studentList);
+      }, (err) => {
+        console.warn("[Firebase Guru] Listener murid error:", err);
       });
+    } else {
+      console.warn("[Firebase Guru] Firebase DB tidak tersedia, fallback ke mode lokal.");
+    }
 
-      teacherPeer.on("error", (err) => {
-        console.warn("[PeerJS Guru] Peer Server Error:", err);
-        if (err.type === "unavailable-id") {
-          console.log("[PeerJS Guru] PIN digunakan, membuat PIN baru...");
-          regeneratePin();
-        }
+    return classPin;
+  }
+
+  function regeneratePin(customQuestions) {
+    cleanupTeacherListeners();
+    return startTeacherSession(customQuestions);
+  }
+
+  function resumeTeacherSession() {
+    if (!classPin) {
+      const saved = readClassroomData();
+      classPin = saved ? saved.pin : null;
+    }
+    if (!classPin) return null;
+
+    initChannel();
+    currentRole = "teacher";
+
+    const db = getDb();
+    if (db && !studentsListenerRef) {
+      teacherRoomRef = db.ref("rooms/" + classPin);
+      studentsListenerRef = db.ref("rooms/" + classPin + "/students");
+      studentsListenerRef.on("value", (snapshot) => {
+        const val = snapshot.val() || {};
+        const studentList = Object.values(val).sort((a, b) => (b.score || 0) - (a.score || 0));
+        console.log("[Firebase Guru] 📡 Resume progres murid:", studentList.length, "murid");
+        writeLiveMonitorData(val);
+        notifyLeaderboardUpdate(studentList);
+      }, (err) => {
+        console.warn("[Firebase Guru] Listener murid error:", err);
       });
-    } catch (e) {
-      console.warn("[PeerJS Guru] Gagal membuat Peer host:", e);
+    }
+
+    notifyLeaderboardUpdate();
+    return classPin;
+  }
+
+  function cleanupTeacherListeners() {
+    if (studentsListenerRef) {
+      try {
+        studentsListenerRef.off();
+      } catch (e) {}
+      studentsListenerRef = null;
+    }
+    if (teacherRoomRef) {
+      try {
+        teacherRoomRef.child("active").set(false);
+      } catch (e) {}
+      teacherRoomRef = null;
     }
   }
 
-  // -------------------- Teacher --------------------
-  function startTeacherSession() {
-    initChannel();
-    currentRole = "teacher";
+  function resetLeaderboard() {
+    clearLiveMonitor();
     const data = readClassroomData();
-    classPin = generatePin();
-    data.pin = classPin;
+    data.students = {};
     writeClassroomData(data);
-    initTeacherPeerHost(classPin);
-    return classPin;
+
+    const db = getDb();
+    if (db && classPin) {
+      db.ref("rooms/" + classPin + "/students").remove()
+        .then(() => console.log("[Firebase] ✅ Riwayat murid di PIN", classPin, "berhasil dihapus."))
+        .catch(err => console.warn("[Firebase] Gagal menghapus node murid:", err));
+    }
+
+    notifyLeaderboardUpdate([]);
+    return true;
   }
 
-  function regeneratePin() {
-    const data = readClassroomData();
-    classPin = generatePin();
-    data.pin = classPin;
-    writeClassroomData(data);
-    initTeacherPeerHost(classPin);
-    return classPin;
-  }
-
-  function getLeaderboard() {
-    const data = readClassroomData();
-    const students = data.students || {};
-    return Object.values(students)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 30);
-  }
-
-  function subscribeLeaderboard(callback) {
-    onLeaderboardUpdate = callback;
-    initChannel();
-  }
-
-  // -------------------- Student --------------------
+  // -------------------- Murid (Student) Session --------------------
   function joinAsStudent(name, pin) {
     initChannel();
     currentRole = "student";
     studentName = (name || "Murid").trim().slice(0, 16) || "Murid";
     studentId = "s_" + Date.now() + "_" + Math.floor(Math.random() * 10000);
+    studentKey = sanitizeKey(studentName) + "_" + studentId.slice(-4);
     classPin = (pin || "").trim();
 
     const data = readClassroomData();
@@ -200,122 +316,208 @@
   }
 
   /**
-   * Menghubungkan Murid ke Guru via PeerJS (WebRTC P2P) dan mengambil soal jika PIN diisi.
+   * Menghubungkan Murid ke Ruang Kelas via Firebase Realtime Database
+   * Mengunduh bank soal secara instan dari Firebase /rooms/{PIN}/questions.
    */
   function connectAndJoin(name, pin, callback) {
     initChannel();
     currentRole = "student";
     studentName = (name || "Murid").trim().slice(0, 16) || "Murid";
     studentId = "s_" + Date.now() + "_" + Math.floor(Math.random() * 10000);
+    studentKey = sanitizeKey(studentName) + "_" + studentId.slice(-4);
     classPin = (pin || "").trim();
 
-    const data = readClassroomData();
-    if (!data.students) data.students = {};
-    data.students[studentId] = {
-      id: studentId,
-      name: studentName,
-      score: 0,
-      coins: 0,
-      joinedAt: Date.now()
-    };
-    writeClassroomData(data);
-
-    // 1. Jika tidak ada PIN yang dimasukkan -> Coba baca dari memori lokal (offline / same-device mode)
+    // 1. Jika TIDAK ada PIN diisi -> Fallback ke mode lokal/offline
     if (!classPin) {
-      const localQuiz = JSON.parse(localStorage.getItem("GAME_QUIZ_DATA") || "[]");
+      console.log("[Multiplayer Murid] Bergabung tanpa PIN (Mode Offline/Lokal).");
+      let localQuiz = [];
+      try {
+        const raw = sessionStorage.getItem("STUDENT_ACTIVE_QUIZ") || localStorage.getItem("STUDENT_ACTIVE_QUIZ") || localStorage.getItem("GAME_QUIZ_DATA");
+        localQuiz = raw ? JSON.parse(raw) : [];
+      } catch (e) {
+        localQuiz = [];
+      }
+
       if (localQuiz.length > 0) {
-        if (window.QuestionsModule) {
+        if (window.QuestionsModule && typeof window.QuestionsModule.setStudentQuestions === "function") {
+          window.QuestionsModule.setStudentQuestions(localQuiz);
+        } else if (window.QuestionsModule && typeof window.QuestionsModule.setQuestionsFromPDF === "function") {
           window.QuestionsModule.setQuestionsFromPDF(localQuiz);
         }
-        if (typeof callback === "function") callback({ success: true, count: localQuiz.length, questions: localQuiz });
+        if (typeof callback === "function") {
+          callback({ success: true, count: localQuiz.length, questions: localQuiz });
+        }
       } else {
-        if (typeof callback === "function") callback({ success: false, message: "Silakan masukkan PIN Kelas dari Guru untuk mengunduh soal." });
+        if (typeof callback === "function") {
+          callback({ success: false, message: "Silakan masukkan PIN Kelas dari Guru untuk mengunduh soal." });
+        }
       }
       return;
     }
 
-    // 2. Jika ada PIN dimasukkan dan PeerJS tersedia -> Ambil soal dari Guru via P2P
-    if (typeof window.Peer === "undefined") {
-      // Fallback tanpa library PeerJS
-      const localQuiz = JSON.parse(localStorage.getItem("GAME_QUIZ_DATA") || "[]");
+    // 2. Jika ada PIN diisi -> Ambil dari Firebase Realtime Database
+    const db = getDb();
+    if (!db) {
+      console.warn("[Firebase Murid] Firebase DB tidak terdeteksi. Mencoba fallback ke cache lokal.");
+      let localQuiz = [];
+      try {
+        const raw = sessionStorage.getItem("STUDENT_ACTIVE_QUIZ") || localStorage.getItem("STUDENT_ACTIVE_QUIZ") || localStorage.getItem("GAME_QUIZ_DATA");
+        localQuiz = raw ? JSON.parse(raw) : [];
+      } catch (e) {}
+
       if (localQuiz.length > 0) {
-        if (window.QuestionsModule) window.QuestionsModule.setQuestionsFromPDF(localQuiz);
-        if (typeof callback === "function") callback({ success: true, count: localQuiz.length, questions: localQuiz });
+        if (window.QuestionsModule && typeof window.QuestionsModule.setStudentQuestions === "function") {
+          window.QuestionsModule.setStudentQuestions(localQuiz);
+        } else if (window.QuestionsModule) {
+          window.QuestionsModule.setQuestionsFromPDF(localQuiz);
+        }
+        if (typeof callback === "function") {
+          callback({ success: true, count: localQuiz.length, questions: localQuiz, warning: "Firebase offline. Menggunakan soal lokal." });
+        }
       } else {
-        if (typeof callback === "function") callback({ success: false, message: "Pustaka PeerJS tidak tersedia & soal lokal kosong." });
+        if (typeof callback === "function") {
+          callback({ success: false, message: "Pustaka Firebase belum siap dan tidak ada soal di cache lokal." });
+        }
       }
       return;
     }
 
+    console.log("[Firebase Murid] Menghubungkan ke PIN Kelas:", classPin);
+
+    // Timeout proteksi 10 detik jika jaringan sangat lambat
     let isHandled = false;
-    const targetPeerId = "psk_room_" + classPin;
-    console.log("[PeerJS Murid] Menghubungkan ke PIN Kelas Guru:", targetPeerId);
-
-    if (studentPeer) {
-      try { studentPeer.destroy(); } catch (e) {}
-    }
-    studentPeer = new window.Peer();
-
     const timeoutTimer = setTimeout(() => {
       if (!isHandled) {
         isHandled = true;
-        // Fallback: Coba lihat jika soal sudah ada di localStorage lokal
-        const localQuiz = JSON.parse(localStorage.getItem("GAME_QUIZ_DATA") || "[]");
-        if (localQuiz.length > 0) {
-          if (window.QuestionsModule) window.QuestionsModule.setQuestionsFromPDF(localQuiz);
-          if (typeof callback === "function") callback({ success: true, count: localQuiz.length, questions: localQuiz, warning: "Koneksi P2P batas waktu. Menggunakan cache lokal." });
-        } else {
-          if (typeof callback === "function") callback({ success: false, message: "Gagal terhubung ke PIN Guru (" + classPin + "). Pastikan PIN benar dan Guru sedang online!" });
+        console.warn("[Firebase Murid] Batas waktu permintaan soal habis (10s).");
+        if (typeof callback === "function") {
+          callback({
+            success: false,
+            message: "Koneksi ke Firebase batas waktu (10 detik). Periksa koneksi internet atau pastikan Rules Firebase sudah diizinkan (read/write: true)."
+          });
         }
       }
-    }, 7000);
+    }, 10000);
 
-    studentPeer.on("open", (id) => {
-      console.log("[PeerJS Murid] Client Peer aktif:", id);
-      try {
-        studentConn = studentPeer.connect(targetPeerId, { reliable: true });
+    const roomRef = db.ref("rooms/" + classPin);
 
-        studentConn.on("open", () => {
-          console.log("[PeerJS Murid] ✅ Terhubung ke Guru! Meminta bank soal...");
-          studentConn.send({ type: "REQUEST_QUIZ", name: studentName });
-        });
-
-        studentConn.on("data", (data) => {
-          if (data && data.type === "QUIZ_DATA") {
-            console.log("[PeerJS Murid] 📦 Berhasil menerima data soal dari Guru! Jumlah:", data.questions ? data.questions.length : 0);
-            if (!isHandled) {
-              isHandled = true;
-              clearTimeout(timeoutTimer);
-
-              if (Array.isArray(data.questions) && data.questions.length > 0) {
-                localStorage.setItem("GAME_QUIZ_DATA", JSON.stringify(data.questions));
-                if (window.QuestionsModule) {
-                  window.QuestionsModule.setQuestionsFromPDF(data.questions);
-                }
-                if (typeof callback === "function") callback({ success: true, count: data.questions.length, questions: data.questions });
-              } else {
-                if (typeof callback === "function") callback({ success: false, message: "Guru di PIN " + classPin + " belum selesai mengunggah soal kuis." });
-              }
-            }
-          }
-        });
-
-        studentConn.on("error", (err) => {
-          console.warn("[PeerJS Murid] Error koneksi channel:", err);
-        });
-      } catch (err) {
-        console.warn("[PeerJS Murid] Gagal menginisialisasi koneksi:", err);
-      }
-    });
-
-    studentPeer.on("error", (err) => {
-      console.warn("[PeerJS Murid] Error Peer client:", err);
-      if (!isHandled) {
+    roomRef.once("value")
+      .then((snapshot) => {
+        if (isHandled) return;
         isHandled = true;
         clearTimeout(timeoutTimer);
-        if (typeof callback === "function") callback({ success: false, message: "PIN Kelas (" + classPin + ") tidak ditemukan atau Guru belum mengaktifkan ruang kelas." });
-      }
-    });
+
+        if (!snapshot.exists()) {
+          console.warn("[Firebase Murid] PIN tidak ditemukan di Firebase:", classPin);
+          if (typeof callback === "function") {
+            callback({
+              success: false,
+              message: "PIN Kelas (" + classPin + ") tidak ditemukan! Pastikan Guru sudah menekan 'Mulai Game / Buat Kode'."
+            });
+          }
+          return;
+        }
+
+        const roomData = snapshot.val() || {};
+        const questions = roomData.questions;
+
+        if (!Array.isArray(questions) || questions.length === 0) {
+          console.warn("[Firebase Murid] Room ada tetapi questions kosong:", classPin);
+          if (typeof callback === "function") {
+            callback({
+              success: false,
+              message: "Guru di PIN " + classPin + " belum selesai mengunggah soal kuis. Silakan coba sesaat lagi."
+            });
+          }
+          return;
+        }
+
+        console.log("[Firebase Murid] ✅ Berhasil mengunduh", questions.length, "soal dari Guru di PIN:", classPin);
+
+        // Simpan soal ke sesi Murid secara terisolasi (JANGAN simpan ke GAME_QUIZ_DATA Guru)
+        try {
+          sessionStorage.setItem("STUDENT_ACTIVE_QUIZ", JSON.stringify(questions));
+          localStorage.setItem("STUDENT_ACTIVE_QUIZ", JSON.stringify(questions));
+        } catch (e) {}
+
+        if (window.QuestionsModule && typeof window.QuestionsModule.setStudentQuestions === "function") {
+          window.QuestionsModule.setStudentQuestions(questions);
+        } else if (window.QuestionsModule && typeof window.QuestionsModule.setQuestionsFromPDF === "function") {
+          window.QuestionsModule.setQuestionsFromPDF(questions);
+        }
+
+        // Daftarkan murid ke Firebase /rooms/{PIN}/students/{studentKey}
+        studentProgressRef = db.ref("rooms/" + classPin + "/students/" + studentKey);
+        studentProgressRef.set({
+          name: studentName,
+          currentQuestion: 0,
+          totalQuestions: questions.length,
+          correct: 0,
+          wrong: 0,
+          status: "Mulai Bergabung",
+          score: 0,
+          lastUpdated: Date.now()
+        }).catch((err) => {
+          console.warn("[Firebase Murid] Gagal mendaftarkan murid ke Firebase:", err);
+        });
+
+        // Set onDisconnect untuk menandai status jika murid menutup tab
+        try {
+          studentProgressRef.onDisconnect().update({
+            status: "Terputus",
+            lastUpdated: Date.now()
+          });
+        } catch (e) {}
+
+        if (typeof callback === "function") {
+          callback({ success: true, count: questions.length, questions: questions });
+        }
+      })
+      .catch((err) => {
+        if (isHandled) return;
+        isHandled = true;
+        clearTimeout(timeoutTimer);
+
+        console.error("[Firebase Murid] ❌ Error saat mengambil data PIN:", err);
+        let errorMsg = "Gagal terhubung ke ruang kelas: " + (err.message || "Unknown error");
+        if (err.code === "PERMISSION_DENIED" || (err.message && err.message.toLowerCase().includes("permission_denied"))) {
+          errorMsg = "Akses Firebase Ditolak (Permission Denied). Pastikan Guru sudah mengatur Rules Realtime Database menjadi { \".read\": true, \".write\": true }.";
+        }
+
+        if (typeof callback === "function") {
+          callback({ success: false, message: errorMsg });
+        }
+      });
+  }
+
+  // -------------------- Live Progress Update --------------------
+  function updateLiveProgress(correctCount, wrongCount, currentQ, totalQ, isFinished, score) {
+    if (currentRole !== "student" || !studentName) return;
+
+    const progressObj = {
+      name: studentName,
+      currentQuestion: currentQ,
+      totalQuestions: totalQ,
+      correct: correctCount,
+      wrong: wrongCount,
+      status: isFinished ? "Selesai" : "Sedang Mengerjakan",
+      score: score || 0,
+      lastUpdated: Date.now()
+    };
+
+    // Update cache lokal
+    const localData = readLiveMonitorData();
+    localData[studentName] = progressObj;
+    writeLiveMonitorData(localData);
+
+    // Kirim real-time ke Firebase jika terhubung dengan PIN
+    const db = getDb();
+    if (db && classPin && studentKey) {
+      const ref = studentProgressRef || db.ref("rooms/" + classPin + "/students/" + studentKey);
+      ref.update(progressObj).catch((err) => {
+        console.warn("[Firebase Murid] Gagal mengirim progress realtime:", err);
+      });
+    }
   }
 
   function updateStudentScore(score, coins) {
@@ -330,80 +532,37 @@
     writeClassroomData(data);
   }
 
-  function resetLeaderboard() {
+  function getLeaderboard() {
     const data = readClassroomData();
-    data.students = {};
-    writeClassroomData(data);
-    notifyLeaderboardUpdate();
-    return true;
+    const students = data.students || {};
+    return Object.values(students)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 30);
+  }
+
+  function getLiveMonitorList() {
+    const data = readLiveMonitorData();
+    return Object.values(data).sort((a, b) => (b.score || 0) - (a.score || 0));
+  }
+
+  function clearLiveMonitor() {
+    try {
+      localStorage.removeItem(LIVE_MONITOR_KEY);
+    } catch (e) {}
+  }
+
+  function subscribeLeaderboard(callback) {
+    onLeaderboardUpdate = callback;
+    initChannel();
+    if (typeof callback === "function") {
+      callback(getLiveMonitorList());
+    }
   }
 
   function setRole(role) {
     if (["teacher", "admin", "student"].includes(role)) {
       currentRole = role;
     }
-  }
-
-  // -------------------- Live Monitor --------------------
-  const LIVE_MONITOR_KEY = "GAME_LIVE_MONITOR";
-
-  function readLiveMonitorData() {
-    try {
-      const raw = localStorage.getItem(LIVE_MONITOR_KEY);
-      return raw ? JSON.parse(raw) : {};
-    } catch(e) {
-      return {};
-    }
-  }
-
-  function writeLiveMonitorData(data) {
-    localStorage.setItem(LIVE_MONITOR_KEY, JSON.stringify(data));
-    if (channel) {
-      channel.postMessage({ type: "leaderboard-update" });
-    }
-  }
-
-  function updateLiveProgress(correctCount, wrongCount, currentQ, totalQ, isFinished, score) {
-    if (currentRole !== "student" || !studentName) return;
-    const data = readLiveMonitorData();
-    data[studentName] = {
-      name: studentName,
-      currentQuestion: currentQ,
-      totalQuestions: totalQ,
-      correct: correctCount,
-      wrong: wrongCount,
-      status: isFinished ? "Selesai" : "Sedang Mengerjakan",
-      score: score,
-      lastUpdated: Date.now()
-    };
-    writeLiveMonitorData(data);
-
-    // Sinkronkan balik ke Device Guru via PeerJS P2P connection jika ada
-    if (studentConn && studentConn.open) {
-      try {
-        studentConn.send({
-          type: "LIVE_PROGRESS",
-          name: studentName,
-          currentQuestion: currentQ,
-          totalQuestions: totalQ,
-          correct: correctCount,
-          wrong: wrongCount,
-          status: isFinished ? "Selesai" : "Sedang Mengerjakan",
-          score: score
-        });
-      } catch (e) {
-        console.warn("[PeerJS Murid] Gagal mengirim progress P2P:", e);
-      }
-    }
-  }
-
-  function getLiveMonitorList() {
-    const data = readLiveMonitorData();
-    return Object.values(data).sort((a, b) => b.score - a.score);
-  }
-  
-  function clearLiveMonitor() {
-    localStorage.removeItem(LIVE_MONITOR_KEY);
   }
 
   function getRole() {
@@ -414,9 +573,15 @@
     return studentName;
   }
 
+  function getClassPin() {
+    return classPin;
+  }
+
+  // Ekspor API Modul
   window.MultiplayerModule = {
     startTeacherSession,
     regeneratePin,
+    resumeTeacherSession,
     getLeaderboard,
     subscribeLeaderboard,
     joinAsStudent,
@@ -426,9 +591,11 @@
     getRole,
     setRole,
     getStudentName,
+    getClassPin,
     updateLiveProgress,
     getLiveMonitorList,
     clearLiveMonitor
   };
-})();
 
+  console.log("[Multiplayer] multiplayer.js (Firebase Realtime Database) dimuat OK.");
+})();
