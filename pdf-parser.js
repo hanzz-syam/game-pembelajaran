@@ -256,8 +256,8 @@
       }
     }
 
-    // Pola Regex Fleksibel untuk Nomor Soal: 1., 1), 1 , [1], Soal 1, No 1.
-    const SOAL_REGEX = /(?:^|\n)\s*(?:(?:Soal|No\.?|Nomor)\s+)?\[?(\d{1,3})\]?\s*(?:[.):]\s+|\s+(?=[A-Za-z\u0600-\u06FF]))/gi;
+    // Pola Regex Fleksibel untuk Nomor Soal: 1., 1), 1.proses, 1)proses
+    const SOAL_REGEX = /\n?\s*(\d+)[\.\)]\s*/g;
     const soalPositions = [];
     let m;
     while ((m = SOAL_REGEX.exec(contentWithoutKey)) !== null) {
@@ -281,10 +281,10 @@
       const block = contentWithoutKey.substring(blockStart, blockEnd).trim();
       if (block.length < 5) continue;
 
-      // Pola Regex Fleksibel untuk Pilihan Jawaban: A., a., A), a), (A), [A] -> support sejajar (inline)
+      // Pola Regex Fleksibel untuk Pilihan Jawaban: a., a), a.daun, a)daun
       const optMatches = [];
       let optM;
-      const optRx = /(?:^|\n|\s+)(?:\(?\[?([A-Ea-e])\]?\)?)\s*[.)]\s+/g;
+      const optRx = /\s*([a-d])[\.\)]\s*/gi;
       while ((optM = optRx.exec(block)) !== null) {
         const matchStr = optM[0];
         const matchIndex = optM.index;
@@ -312,7 +312,7 @@
 
       // Ekstrak teks soal (sebelum pilihan pertama)
       let questionText = block.substring(0, validOptMatches[0].index).trim();
-      questionText = questionText.substring(soalPositions[si].matchLen).trim();
+      questionText = questionText.replace(/^\s*(?:(?:Soal|No\.?|Nomor)\s+)?\[?\d+\]?[\.\)]?\s*/i, "").trim();
       questionText = questionText.replace(/\s+/g, " ");
 
       if (!questionText || questionText.length < 3) continue;
@@ -330,7 +330,7 @@
         const rawOpt = block.substring(cur.index + cur.matchLen, nextStart);
         // Potong jika ada baris kunci jawaban di akhir opsi terakhir
         const optText = rawOpt
-          .split(/(?:Kunci(?:\s*Jawaban)?|Jawaban(?:\s*Benar)?|Ans(?:wer)?|Key)\s*[:=.]/i)[0]
+          .split(/(?:Kunci\s*:\s*[A-D]|Kunci(?:\s*Jawaban)?|Jawaban(?:\s*Benar)?|Ans(?:wer)?|Key)\s*[:=.]?/i)[0]
           .trim()
           .replace(/\s+/g, " ");
 
@@ -348,7 +348,8 @@
       if (answerKeyMap.hasOwnProperty(qNum)) {
         kunciIndex = answerKeyMap[qNum];
       } else {
-        const kunciLineMatch = block.match(/(?:Kunci(?:\s*Jawaban)?|Jawaban(?:\s*Benar)?|Ans(?:wer)?|Key)\s*[:=.]?\s*([^\n]+)/i);
+        const kunciStrictMatch = block.match(/Kunci\s*:\s*([A-D])/i);
+        const kunciLineMatch = kunciStrictMatch || block.match(/(?:Kunci(?:\s*Jawaban)?|Jawaban(?:\s*Benar)?|Ans(?:wer)?|Key)\s*[:=.]?\s*([^\n]+)/i);
 
         if (kunciLineMatch) {
           let rawKunci = kunciLineMatch[1]
@@ -388,7 +389,7 @@
     for (const para of paragraphs) {
       const optMatches = [];
       let optM;
-      const optRx = /(?:^|\n|\s+)(?:\(?\[?([A-Ea-e])\]?\)?)\s*[.)]\s*/g;
+      const optRx = /\s*([a-d])[\.\)]\s*/gi;
       while ((optM = optRx.exec(para)) !== null) {
         const matchStr = optM[0];
         const matchIndex = optM.index;
@@ -423,7 +424,7 @@
         const cur = validOptMatches[oi];
         const nextStart = oi < validOptMatches.length - 1 ? validOptMatches[oi + 1].index : para.length;
         const rawOpt = para.substring(cur.index + cur.matchLen, nextStart)
-          .split(/(?:Kunci(?:\s*Jawaban)?|Jawaban(?:\s*Benar)?|Ans(?:wer)?|Key)\s*[:=.]/i)[0]
+          .split(/(?:Kunci\s*:\s*[A-D]|Kunci(?:\s*Jawaban)?|Jawaban(?:\s*Benar)?|Ans(?:wer)?|Key)\s*[:=.]?/i)[0]
           .trim().replace(/\s+/g, " ");
         if (rawOpt.length > 0 && !optLetters.includes(cur.letter)) {
           options.push(rawOpt); optLetters.push(cur.letter);
@@ -432,7 +433,8 @@
       if (options.length < 2) continue;
 
       let kunciIndex = 0;
-      const km = para.match(/(?:Kunci(?:\s*Jawaban)?|Jawaban(?:\s*Benar)?|Ans(?:wer)?|Key)\s*[:=.]?\s*([^\n]+)/i);
+      const kunciStrictMatch = para.match(/Kunci\s*:\s*([A-D])/i);
+      const km = kunciStrictMatch || para.match(/(?:Kunci(?:\s*Jawaban)?|Jawaban(?:\s*Benar)?|Ans(?:wer)?|Key)\s*[:=.]?\s*([^\n]+)/i);
       if (km) {
         let rawKunci = km[1]
           .replace(/^[.:=\s\(\)\[\]]+|[.:=\s\(\)\[\]]+$/g, "")
